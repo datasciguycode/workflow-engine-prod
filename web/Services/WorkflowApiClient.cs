@@ -9,13 +9,14 @@ public record ItemSummary(string Id, string StageId, JsonObject Data);
 public record ChatMessage(string Who, string Body, string? ItemId, string? StageId);
 public record ItemEventRow(string EventType, string? StageId, JsonObject? Data);
 
-// Cloud project config (workflow-engine-test, pointed here 2026-10-31 replacing local dev).
+// PROD project config (workflow-engine-prod, created 2026-11-07). This is the only
+// per-environment value in the web app; see the config-indirection item in PROGRESS.md.
 // PublishableKey is the new sb_publishable_... format (replaces the legacy JWT anon key) --
 // goes in the same `apikey` header either way.
 public static class SupabaseConfig
 {
-    public const string ApiUrl = "https://utwyvtbzesswpoihmlic.supabase.co";
-    public const string PublishableKey = "sb_publishable_Ec1_eTAJtWMb2AaC1ULE7w_8f0BvYsk";
+    public const string ApiUrl = "https://tapguiosrjbdusqyhxqe.supabase.co";
+    public const string PublishableKey = "sb_publishable_YUUX0cyget1xadmUJ9qClA_BiMzJh5a";
 }
 
 public class WorkflowApiClient

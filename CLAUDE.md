@@ -1,5 +1,11 @@
 # Workflow Engine
 
+**This is the PROD repo.** Dev is `datasciguycode/workflow-engine` (separate repo, separate
+Supabase project). Always pass `--project-ref tapguiosrjbdusqyhxqe` to Supabase commands run
+here. Don't run local-stack commands (`supabase start`/`stop`/`db reset --local`, `scripts/*.py`)
+from this clone — see PROGRESS.md for why. Deploy functions with `--use-api`, and only
+`agent-loop` (never a bare `supabase functions deploy`, which would also ship `mcp-server`).
+
 ## Milestones — flushing state before a context clear
 
 A "milestone" is a specific, user-invoked request: run the final pass needed to safely

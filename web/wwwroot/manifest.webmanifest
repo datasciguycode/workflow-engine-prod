@@ -1,6 +1,6 @@
 {
-  "name": "WorkflowApp.Web",
-  "short_name": "WorkflowApp.Web",
+  "name": "Workflow Engine",
+  "short_name": "Workflow Engine",
   "id": "./",
   "start_url": "./",
   "display": "standalone",

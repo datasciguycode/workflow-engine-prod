@@ -1,0 +1,37 @@
+name: Keep Supabase project alive
+
+# Free-tier Supabase projects auto-pause after ~7 days with no activity. A ping-only cron
+# workflow would eventually stop running too -- GitHub disables a scheduled workflow after 60
+# days with no REPO activity, and a workflow merely running doesn't count as that activity. So
+# this does both: pings Supabase, then commits a timestamp, which is real repo activity that
+# resets GitHub's own 60-day clock on this same workflow. See PROGRESS.md "Keep-alive".
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'   # every 3 days
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to commit the timestamp file
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Ping Supabase (counts as project activity)
+        run: |
+          curl -sS -o /dev/null -w "%{http_code}\n" \
+            "https://tapguiosrjbdusqyhxqe.supabase.co/rest/v1/" \
+            -H "apikey: sb_publishable_YUUX0cyget1xadmUJ9qClA_BiMzJh5a"
+
+      - name: Record the ping (resets GitHub's 60-day cron-disable clock)
+        run: |
+          mkdir -p supabase/prod
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > supabase/prod/last-keepalive.txt
+          git config user.name "keep-alive-bot"
+          git config user.email "actions@github.com"
+          git add supabase/prod/last-keepalive.txt
+          git diff --cached --quiet || git commit -m "Keep-alive ping $(date -u +%Y-%m-%d)"
+          git push
