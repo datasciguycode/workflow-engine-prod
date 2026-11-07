@@ -531,7 +531,8 @@ else
                 // Chat only exists on the Jobs list (no item) or a stage's own drilled-in view
                 // (both set) now that the job-overview page has no chat box of its own -- so
                 // _selectedStageId is always set here whenever _selectedItem is.
-                selectedStageTitle: _selectedStageId is not null ? StageTitle(_selectedStageId) : null);
+                selectedStageTitle: _selectedStageId is not null ? StageTitle(_selectedStageId) : null,
+                selectedJobNumber: _selectedItem is null ? null : JobNumber(_selectedItem));
             _messages = messages;
             _chatLog.Add(("Agent", reply, itemId, stageId));
             await Api.AddChatMessageAsync(WorkflowId, StoredWho("Agent"), reply, itemId, stageId);
@@ -577,6 +578,7 @@ else
             arr.Add(new JsonObject
             {
                 ["number"] = i + 1,
+                ["job_number"] = JobNumber(_items[i]),
                 ["item_id"] = _items[i].Id,
                 ["label"] = ItemTitle(_items[i]),
             });

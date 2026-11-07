@@ -136,7 +136,8 @@ public class WorkflowApiClient
     // tool_use, and tool_result blocks all round-trip through here -- see agent-loop/index.ts).
     public async Task<(string Reply, JsonArray Messages)> SendAgentMessageAsync(
         string workflowId, JsonArray queue, JsonArray messages,
-        string? selectedItemId = null, string? selectedItemLabel = null, string? selectedStageTitle = null)
+        string? selectedItemId = null, string? selectedItemLabel = null, string? selectedStageTitle = null,
+        int? selectedJobNumber = null)
     {
         var body = new JsonObject
         {
@@ -146,6 +147,7 @@ public class WorkflowApiClient
             ["selected_item_id"] = selectedItemId,
             ["selected_item_label"] = selectedItemLabel,
             ["selected_stage_title"] = selectedStageTitle,
+            ["selected_job_number"] = selectedJobNumber,
         };
         var req = await NewRequestAsync(HttpMethod.Post, "/functions/v1/agent-loop");
         req.Content = JsonContent.Create(body);
