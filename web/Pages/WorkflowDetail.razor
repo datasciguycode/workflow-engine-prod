@@ -66,6 +66,26 @@ else
                 <span class="field-key">@ChecklistLabel(key):</span> @FieldText(key, value)
             </div>
         }
+        @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId)?.Checklist.Contains("scheduled_at") == true)
+        {
+            var upcoming = UpcomingAppointments().ToList();
+            <h2>Upcoming Appointments</h2>
+            @if (upcoming.Count == 0)
+            {
+                <p style="opacity:0.6;">No upcoming appointments scheduled.</p>
+            }
+            else
+            {
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2" Style="margin-bottom:12px;">
+                    @foreach (var (item, when) in upcoming)
+                    {
+                        <div style="opacity:0.85;">
+                            @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture) &mdash; @ItemTitle(item)
+                        </div>
+                    }
+                </FluentStack>
+            }
+        }
     }
     else if (_selectedItem is not null)
     {
@@ -276,6 +296,26 @@ else
         key.Contains("date", StringComparison.OrdinalIgnoreCase) ||
         key.Contains("time", StringComparison.OrdinalIgnoreCase) ||
         key.EndsWith("_at", StringComparison.OrdinalIgnoreCase);
+
+    // Shown on whichever stage collects scheduled_at (e.g. "scheduling"), so a dispatcher can
+    // see what's already booked while scheduling a new job -- doesn't touch the agent/chat path
+    // at all, just filters/sorts items already fetched for this workflow (2026-11-07).
+    private IEnumerable<(ItemSummary Item, DateTime When)> UpcomingAppointments()
+    {
+        if (_items is null) yield break;
+        var parsed = _items
+            .Select(item => (
+                Item: item,
+                Parsed: item.Data.TryGetPropertyValue("scheduled_at", out var v) &&
+                    v is JsonValue jv && jv.GetValueKind() == System.Text.Json.JsonValueKind.String &&
+                    DateTime.TryParse(jv.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out var dt)
+                    ? dt : (DateTime?)null))
+            .Where(x => x.Parsed is not null)
+            .OrderBy(x => x.Parsed)
+            .Take(10);
+        foreach (var x in parsed) yield return (x.Item, x.Parsed!.Value);
+    }
 
     private string ItemTitle(ItemSummary item)
     {
