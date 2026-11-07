@@ -5,7 +5,7 @@ namespace WorkflowApp.Web.Services;
 
 public record WorkflowSummary(string Id, string Name, string ItemLabel);
 public record StageSummary(string Id, string Title, int? SequenceOrder, bool IsInitial, bool IsTerminal, List<string> Checklist);
-public record ItemSummary(string Id, string StageId, JsonObject Data);
+public record ItemSummary(string Id, string StageId, JsonObject Data, DateTimeOffset CreatedAt);
 public record ChatMessage(string Who, string Body, string? ItemId, string? StageId);
 public record ItemEventRow(string EventType, string? StageId, JsonObject? Data);
 
@@ -86,14 +86,15 @@ public class WorkflowApiClient
     public async Task<List<ItemSummary>> GetItemsAsync(string workflowId)
     {
         var req = await NewRequestAsync(HttpMethod.Get,
-            $"/rest/v1/items?workflow_id=eq.{workflowId}&select=id,stage_id,data&order=updated_at.desc");
+            $"/rest/v1/items?workflow_id=eq.{workflowId}&select=id,stage_id,data,created_at&order=updated_at.desc");
         var res = await _http.SendAsync(req);
         res.EnsureSuccessStatusCode();
         var rows = await res.Content.ReadFromJsonAsync<List<JsonObject>>() ?? [];
         return rows.Select(r => new ItemSummary(
             r["id"]!.GetValue<string>(),
             r["stage_id"]!.GetValue<string>(),
-            r["data"]!.AsObject()
+            r["data"]!.AsObject(),
+            r["created_at"]!.GetValue<DateTimeOffset>()
         )).ToList();
     }
 

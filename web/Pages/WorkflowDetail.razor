@@ -49,7 +49,7 @@ else
 
     @if (_selectedStageId is not null && _selectedItem is not null)
     {
-        <h1 style="overflow-wrap:anywhere; word-break:break-word;">@StageTitle(_selectedStageId)</h1>
+        <h1 style="overflow-wrap:anywhere; word-break:break-word;">Job #@JobNumber(_selectedItem) &mdash; @StageTitle(_selectedStageId)</h1>
         @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId) is { Checklist.Count: > 0 } selectedStage)
         {
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="2" Style="margin-bottom:12px;">
@@ -80,7 +80,7 @@ else
                     @foreach (var (item, when) in upcoming)
                     {
                         <div style="opacity:0.85;">
-                            <div>@when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                            <div>Job #@JobNumber(item) &mdash; @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
                             <div>@ItemTitle(item)</div>
                         </div>
                     }
@@ -90,7 +90,7 @@ else
     }
     else if (_selectedItem is not null)
     {
-        <h1>Job</h1>
+        <h1>Job #@JobNumber(_selectedItem)</h1>
         <h2>Stages</h2>
         <FluentStack Orientation="Orientation.Vertical" VerticalGap="6">
             @foreach (var stage in _stages.OrderBy(s => s.SequenceOrder ?? int.MaxValue))
@@ -134,13 +134,11 @@ else
     {
         <h1>@ItemLabelPlural</h1>
         <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
-            @for (var i = 0; i < _items.Count; i++)
+            @foreach (var item in _items)
             {
-                var item = _items[i];
-                var number = i + 1;
                 <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
                     <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                        <strong style="color:var(--app-accent);">@number. @ItemTitle(item) &rarr;</strong>
+                        <strong style="color:var(--app-accent);">#@JobNumber(item) @ItemTitle(item) &rarr;</strong>
                     </div>
                     <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
                 </FluentCard>
@@ -325,6 +323,13 @@ else
         if (key is not null && item.Data[key] is JsonValue jv) return jv.GetValue<string>();
         return $"{ItemLabelPlural.TrimEnd('s')} {item.Id[..Math.Min(8, item.Id.Length)]}";
     }
+
+    // A stable, permanent per-workflow identifier (unlike the Jobs list's display order, which
+    // tracks updated_at and shifts as jobs get touched -- see BuildQueueJson's "number one" for
+    // that other, deliberately separate, numbering). Ranked by created_at ascending; items are
+    // never deleted (no DELETE policy on `items`), so a job's number never changes once assigned.
+    private int JobNumber(ItemSummary item) =>
+        _items is null ? 0 : _items.OrderBy(i => i.CreatedAt).ToList().FindIndex(i => i.Id == item.Id) + 1;
 
     // No field names can be assumed in general (data is domain-agnostic jsonb), but a field
     // literally named "title" is a real convention the agent itself already uses when it creates
