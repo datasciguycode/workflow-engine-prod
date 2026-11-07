@@ -219,7 +219,11 @@ in create_item's initial data) using that exact key -- the UI shows each stage's
 done/not-done by checking for that key in the item's data, so a note-only add_note call for it
 won't show as done even though you recorded it somewhere.
 ${selectedContext}
-Reference queue -- items recently mentioned or created in this conversation, numbered by order of mention (the user may say "number one", "the second one", etc. instead of a name). Each entry also carries job_number, the SAME permanent "Job #N" number shown on screen for that job (different from this queue's own position-based numbering) -- use job_number when the user says "job 2" / "job #2" meaning the on-screen number, not the queue's "number one"/"the second one" convention:
+Reference queue -- items recently mentioned or created in this conversation, numbered by order of mention (the user may say "number one", "the second one", etc. instead of a name). Each entry also carries job_number, the SAME permanent "Job #N" number shown on screen for that job (different from this queue's own position-based numbering) -- use job_number when the user says "job 2" / "job #2" meaning the on-screen number, not the queue's "number one"/"the second one" convention. ${
+    selectedItemId
+      ? "Deliberately EMPTY right now because a specific job is open in the UI (above) -- act on that job alone; don't reference, compare to, or guess at other jobs by name even if they came up earlier in this conversation. This is expected, not an error."
+      : "Populated because no specific job is open right now."
+  }
 ${JSON.stringify(queue)}
 
 Rules:

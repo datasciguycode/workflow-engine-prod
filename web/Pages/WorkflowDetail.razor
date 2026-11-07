@@ -524,8 +524,15 @@ else
 
         try
         {
+            // Only send the other-jobs queue when no job is open (Jobs list / New Job mode).
+            // While a specific job is drilled into, the agent should act on that job alone --
+            // sending other jobs' names/details here is how a future name collision (e.g. two
+            // different "Bob"s) could get misapplied, even with the stronger job-grounding fix
+            // above. An empty queue means the model has nothing else to reference by name or
+            // number, so there's nothing to confuse the open job with (2026-11-07).
+            var queueForThisTurn = _selectedItem is null ? BuildQueueJson() : new JsonArray();
             var (reply, messages) = await Api.SendAgentMessageAsync(
-                WorkflowId, BuildQueueJson(), _messages,
+                WorkflowId, queueForThisTurn, _messages,
                 selectedItemId: _selectedItem?.Id,
                 selectedItemLabel: _selectedItem is null ? null : ItemTitle(_selectedItem),
                 // Chat only exists on the Jobs list (no item) or a stage's own drilled-in view
