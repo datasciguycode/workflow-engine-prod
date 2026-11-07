@@ -69,18 +69,19 @@ else
         @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId)?.Checklist.Contains("scheduled_at") == true)
         {
             var upcoming = UpcomingAppointments().ToList();
-            <h2>Other Upcoming Appointments</h2>
+            <h2>Other Appointments:</h2>
             @if (upcoming.Count == 0)
             {
                 <p style="opacity:0.6;">No upcoming appointments scheduled.</p>
             }
             else
             {
-                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2" Style="margin-bottom:12px;">
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-bottom:12px;">
                     @foreach (var (item, when) in upcoming)
                     {
                         <div style="opacity:0.85;">
-                            @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture) &mdash; @ItemTitle(item)
+                            <div>@when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                            <div>@ItemTitle(item)</div>
                         </div>
                     }
                 </FluentStack>
