@@ -304,6 +304,7 @@ else
     {
         if (_items is null) yield break;
         var parsed = _items
+            .Where(item => item.Id != _selectedItem?.Id) // don't list the job we're already viewing
             .Select(item => (
                 Item: item,
                 Parsed: item.Data.TryGetPropertyValue("scheduled_at", out var v) &&
