@@ -80,8 +80,7 @@ else
                     @foreach (var (item, when) in upcoming)
                     {
                         <div style="opacity:0.85;">
-                            <div>@when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
-                            <div>@ItemTitle(item)</div>
+                            @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture) &mdash; @ItemTitle(item)
                         </div>
                     }
                 </FluentStack>
