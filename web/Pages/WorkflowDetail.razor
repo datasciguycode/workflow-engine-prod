@@ -69,7 +69,7 @@ else
         @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId)?.Checklist.Contains("scheduled_at") == true)
         {
             var upcoming = UpcomingAppointments().ToList();
-            <h2>Upcoming Appointments</h2>
+            <h2>Other Upcoming Appointments</h2>
             @if (upcoming.Count == 0)
             {
                 <p style="opacity:0.6;">No upcoming appointments scheduled.</p>
