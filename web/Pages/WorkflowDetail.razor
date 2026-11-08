@@ -91,31 +91,6 @@ else
                 </FluentStack>
             }
         }
-
-        @* Notes made while drilled into THIS stage -- job-level notes (no stage) show on the job
-           overview page instead (2026-11-08); see NotesFor(). *@
-        <h2>Notes</h2>
-        var stageNotes = NotesFor(_selectedStageId);
-        @if (_notes is null)
-        {
-            <FluentSpinner />
-        }
-        else if (stageNotes.Count == 0)
-        {
-            <p style="opacity:0.6;">No notes yet.</p>
-        }
-        else
-        {
-            <FluentStack Orientation="Orientation.Vertical" VerticalGap="20">
-                @foreach (var note in stageNotes)
-                {
-                    <div>
-                        <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
-                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
-                    </div>
-                }
-            </FluentStack>
-        }
     }
     else if (_selectedItem is not null)
     {
@@ -187,34 +162,6 @@ else
                 </div>
             }
         </FluentStack>
-
-        @* Detailed free-text commentary belongs here (via the agent's add_note tool), not piling
-           up as raw chat history -- notes are plain stored text, never replayed into the agent's
-           own conversation, so there's no token cost to keeping as many as needed (2026-11-07).
-           Job-level only (no stage) -- a note made while drilled into a specific stage shows on
-           that stage's own page instead (2026-11-08); see NotesFor(). *@
-        <h2>Notes</h2>
-        var jobNotes = NotesFor(null);
-        @if (_notes is null)
-        {
-            <FluentSpinner />
-        }
-        else if (jobNotes.Count == 0)
-        {
-            <p style="opacity:0.6;">No notes yet.</p>
-        }
-        else
-        {
-            <FluentStack Orientation="Orientation.Vertical" VerticalGap="20">
-                @foreach (var note in jobNotes)
-                {
-                    <div>
-                        <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
-                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
-                    </div>
-                }
-            </FluentStack>
-        }
     }
 
     @* The job overview page gets its own chat box again (2026-11-08) -- reversing 2026-11-04's
@@ -255,6 +202,37 @@ else
                 </FluentButton>
             }
         </div>
+
+        @* Moved below the text box/buttons, above the chat log (2026-11-08) -- notes used to sit
+           above the chat box and, on a long-running job/stage, pushed the box (and the Complete
+           Stage button) further down the page the more notes piled up. The input now stays right
+           under the heading regardless of notes/log length. Stage view shows that stage's own
+           notes; the job overview page shows job-level (no stage) notes -- see NotesFor(). *@
+        @if (_selectedItem is not null)
+        {
+            <h2>Notes</h2>
+            var notesToShow = NotesFor(_selectedStageId);
+            @if (_notes is null)
+            {
+                <FluentSpinner />
+            }
+            else if (notesToShow.Count == 0)
+            {
+                <p style="opacity:0.6;">No notes yet.</p>
+            }
+            else
+            {
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="20">
+                    @foreach (var note in notesToShow)
+                    {
+                        <div>
+                            <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                            <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
+                        </div>
+                    }
+                </FluentStack>
+            }
+        }
 
         @* Moved below the input (2026-11-06) -- a growing chat log used to push the input (and
            the Complete Stage button) further down the page with every reply, eventually off the
