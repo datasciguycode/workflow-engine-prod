@@ -240,7 +240,7 @@ else
         {
             <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
         }
-        <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="2" Style="width:100%;" />
+        <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="3" Style="width:100%;" />
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; margin-bottom:12px;">
             <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
                 @(_sending ? "Sending..." : "Send")
