@@ -73,6 +73,25 @@ async function restFetch(path: string, jwt: string, body?: unknown) {
   return json;
 }
 
+// Writes a row to agent_events (usage or error), best-effort -- a logging failure should never
+// break the actual chat/tool-call response, so this swallows its own errors (2026-11-08).
+async function logAgentEvent(
+  jwt: string,
+  workflowId: string,
+  itemId: string | undefined,
+  patch: Record<string, unknown>,
+) {
+  try {
+    await restFetch("/agent_events", jwt, {
+      workflow_id: workflowId,
+      item_id: itemId ?? null,
+      ...patch,
+    });
+  } catch (_e) {
+    // best-effort telemetry; intentionally not surfaced
+  }
+}
+
 async function fetchStages(workflowId: string, jwt: string) {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/stages?workflow_id=eq.${workflowId}&select=id,title,sequence_order,is_initial,is_terminal,checklist&order=sequence_order.asc.nullslast`,
@@ -352,6 +371,12 @@ Deno.serve(async (req) => {
 
     messages.push({ role: "assistant", content: response.content });
 
+    await logAgentEvent(jwt, body.workflow_id, body.selected_item_id, {
+      event_type: "usage",
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    });
+
     const toolUses = response.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
@@ -380,6 +405,11 @@ Deno.serve(async (req) => {
           content: JSON.stringify(result),
         });
       } catch (e) {
+        const toolItemId = (toolUse.input as Record<string, unknown>).item_id as string | undefined;
+        await logAgentEvent(jwt, body.workflow_id, toolItemId ?? body.selected_item_id, {
+          event_type: "error",
+          error_message: `${toolUse.name}: ${e}`,
+        });
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolUse.id,
@@ -391,6 +421,10 @@ Deno.serve(async (req) => {
     messages.push({ role: "user", content: toolResults });
   }
   } catch (e) {
+    await logAgentEvent(jwt, body.workflow_id, body.selected_item_id, {
+      event_type: "error",
+      error_message: `agent loop failed: ${e}`,
+    });
     return new Response(JSON.stringify({ error: `agent loop failed: ${e}` }), {
       status: 502,
       headers: corsHeaders,
