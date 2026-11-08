@@ -625,7 +625,6 @@ else
         var previousItemCount = _items!.Count;
         _chatLog.Add(("You", text, itemId, stageId));
         _sending = true;
-        await Api.AddChatMessageAsync(WorkflowId, StoredWho("You"), text, itemId, stageId);
 
         // "Save as note" bypasses the agent entirely -- no AI round trip, so there's no more
         // guessing whether a given message became a note vs. stayed as plain chat; checking the
@@ -638,10 +637,12 @@ else
             _saveAsNote = false;
             try
             {
+                // Not persisted to chat_messages -- when saving as a note, the note itself is
+                // the record; nothing about it needs to also live in the chat history
+                // (2026-11-08).
                 await Api.AddNoteAsync(itemId, text, stageId);
                 _notes = await Api.GetNotesAsync(itemId);
                 _chatLog.Add(("Note", "Saved as note.", itemId, stageId));
-                await Api.AddChatMessageAsync(WorkflowId, StoredWho("Note"), "Saved as note.", itemId, stageId);
             }
             catch (Exception ex)
             {
@@ -654,6 +655,8 @@ else
             }
             return;
         }
+
+        await Api.AddChatMessageAsync(WorkflowId, StoredWho("You"), text, itemId, stageId);
 
         var currentMessages = CurrentMessages();
         currentMessages.Add(new JsonObject { ["role"] = "user", ["content"] = text });
