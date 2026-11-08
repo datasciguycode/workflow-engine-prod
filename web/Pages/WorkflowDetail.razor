@@ -35,7 +35,11 @@ else
             }
         </div>
         <div class="page-header-chat">
-            @if (_selectedItem is null || _selectedStageId is not null)
+            @* Hidden on the bare Jobs list (2026-11-08): chat should only ever create a job or
+               act on one you've actually opened, never reference another job by name/number
+               from the list -- so it only appears once "+ New Job" is clicked, or once a job's
+               stage view is open. *@
+            @if (_newJobMode || _selectedStageId is not null)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary" @onclick="FocusChatInput">
                     &#128172; Chat
@@ -193,8 +197,11 @@ else
        update_data always tags a field by the item's real current stage regardless of which view
        you typed from, so having a second chat box here just let the same data be entered from
        two places with no clear reason to prefer either. Stage-specific chat now only lives on
-       the stage's own drilled-in view below; the Jobs list above keeps its box for creating jobs. *@
-    @if (_selectedItem is null || _selectedStageId is not null)
+       the stage's own drilled-in view below.
+       Also no chat box on the bare Jobs list (2026-11-08) -- it only appears once "+ New Job"
+       is clicked (create-only there) or once a job's stage view is open (scoped to that job
+       alone). See the header button above for the matching condition. *@
+    @if (_newJobMode || _selectedStageId is not null)
     {
         <h2>Chat</h2>
 
@@ -371,9 +378,9 @@ else
     }
 
     // A stable, permanent per-workflow identifier (unlike the Jobs list's display order, which
-    // tracks updated_at and shifts as jobs get touched -- see BuildQueueJson's "number one" for
-    // that other, deliberately separate, numbering). Ranked by created_at ascending; items are
-    // never deleted (no DELETE policy on `items`), so a job's number never changes once assigned.
+    // tracks updated_at and shifts as jobs get touched). Ranked by created_at ascending; items
+    // are never deleted (no DELETE policy on `items`), so a job's number never changes once
+    // assigned.
     private int JobNumber(ItemSummary item) =>
         _items is null ? 0 : _items.OrderBy(i => i.CreatedAt).ToList().FindIndex(i => i.Id == item.Id) + 1;
 
@@ -579,13 +586,15 @@ else
 
         try
         {
-            // Only send the other-jobs queue when no job is open (Jobs list / New Job mode).
-            // While a specific job is drilled into, the agent should act on that job alone --
-            // sending other jobs' names/details here is how a future name collision (e.g. two
-            // different "Bob"s) could get misapplied, even with the stronger job-grounding fix
-            // above. An empty queue means the model has nothing else to reference by name or
-            // number, so there's nothing to confuse the open job with (2026-11-07).
-            var queueForThisTurn = _selectedItem is null ? BuildQueueJson() : new JsonArray();
+            // Never send the other-jobs queue (2026-11-08). While a specific job is drilled
+            // into, the agent should act on that job alone -- sending other jobs' names/details
+            // here is how a future name collision (e.g. two different "Bob"s) could get
+            // misapplied, even with the stronger job-grounding fix above. New Job mode has no
+            // legitimate use for it either now that it's the only "no job open" state the chat
+            // box is reachable from (the bare Jobs list no longer has a chat box at all) -- there's
+            // no reason job creation should ever be able to reference an existing job by name or
+            // number. An empty queue means the model has nothing else to reference, period.
+            var queueForThisTurn = new JsonArray();
             // How many of the user's own messages have been sent in this exact job+stage so far
             // (including this one) -- lets the agent nudge toward add_note once a stage's chat
             // runs long, rather than letting detail pile up indefinitely as raw conversation
@@ -633,25 +642,4 @@ else
         }
     }
 
-    // The agent's "queue" of nameable references is just the Jobs list itself, numbered by its
-    // current display order (most-recently-updated first, from GetItemsAsync) -- replaces the
-    // separately tracked reference-queue list built earlier the same day (2026-10-16 redesign:
-    // "number one" means position 1 in the one list that's already on screen, nothing separate
-    // to maintain).
-    private JsonArray BuildQueueJson()
-    {
-        var arr = new JsonArray();
-        if (_items is null) return arr;
-        for (var i = 0; i < _items.Count; i++)
-        {
-            arr.Add(new JsonObject
-            {
-                ["number"] = i + 1,
-                ["job_number"] = JobNumber(_items[i]),
-                ["item_id"] = _items[i].Id,
-                ["label"] = ItemTitle(_items[i]),
-            });
-        }
-        return arr;
-    }
 }
