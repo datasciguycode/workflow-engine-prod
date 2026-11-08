@@ -93,9 +93,35 @@
     `add_note` over continuing to just talk about something.
   - Two layout fixes: `.page-header-chat` centering, and a page-root `overflow-x: hidden`
     backstop (text was running off the right edge instead of wrapping).
-  **Porting to dev:** none of this has been merged back yet. The agent-grounding fix in
-  particular is a real correctness bug that very likely exists in dev's `agent-loop` too,
-  just unconfirmed/untriggered so far — worth prioritizing if dev work resumes.
+  - **A real telemetry table, `agent_events`** (migration `20261108000000`): one row per
+    Claude API call (`event_type='usage'`, with `input_tokens`/`output_tokens`) or failed
+    tool/loop call (`event_type='error'`, with `error_message`), written best-effort by
+    `agent-loop` via `logAgentEvent` (a logging failure never breaks the actual response).
+    First real data point: ~3,610 input / 43 output tokens for an early no-job-open message
+    (~$0.0077 on Sonnet 5.5's $2/$10-per-MTok pricing). Daily-cost query:
+    ```sql
+    select date(created_at) as day, count(*) as messages,
+      sum(input_tokens) as total_input_tokens, sum(output_tokens) as total_output_tokens,
+      round((sum(input_tokens) * 2.0 + sum(output_tokens) * 10.0) / 1000000, 4) as estimated_cost_usd
+    from agent_events where event_type = 'usage' group by 1 order by 1;
+    ```
+    Needs real usage over at least a full day before this is a meaningful estimate rather
+    than a single-sample guess.
+  - **Root-caused and fixed a recurring grant surprise**: this Supabase project (and dev's)
+    has a platform-level default (`pg_default_acl`, role `postgres`, schema `public`) that
+    grants `anon`/`authenticated` full privileges on any *newly created* table automatically
+    — caught again when `agent_events` came in wide open despite the migration only granting
+    `select, insert` to `authenticated`. Fixed at the root (not just per-table) on **both**
+    prod and dev with `alter default privileges in schema public revoke all on tables from
+    anon, authenticated;` — future tables now start locked down by default. RLS was never
+    actually bypassable either way, but this removes the need to manually correct every new
+    table's grants going forward.
+  **Porting to dev:** none of the UI/agent feature work above has been merged back yet. The
+  agent-grounding fix in particular is a real correctness bug that very likely exists in
+  dev's `agent-loop` too, just unconfirmed/untriggered so far — worth prioritizing if dev
+  work resumes. (The default-privileges fix and the `agent_events` table concept, being
+  infra rather than app behavior, were applied to dev's database directly — see dev's own
+  PROGRESS.md.)
 - **Out of scope for now** (see the plan's "Out of scope" section for the full list and why,
   plus several more deferred ideas raised during 2026-11-07/08 testing): config indirection,
   an admin UI for accounts/members, a custom domain, photo-to-field extraction (e.g. VIN from
