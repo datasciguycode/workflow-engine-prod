@@ -218,7 +218,9 @@ else
             {
                 <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
             }
-            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
+            @* margin-left:auto pushes Send (and Complete Stage after it) to the right edge of the
+               textbox above, while the checkbox stays anchored on the left (2026-11-08). *@
+            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" Style="margin-left:auto;" @onclick="Send">
                 @(_sending ? "Sending..." : "Send")
             </FluentButton>
             @if (_selectedStageId is not null && DoneNextStage() is { } nextStage)
