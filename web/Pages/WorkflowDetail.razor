@@ -222,10 +222,13 @@ else
             }
             else
             {
+                @* VerticalGap on FluentStack doesn't reliably produce visible spacing (same issue
+                   as the chat textarea's Rows attribute, 2026-11-08) -- force it with an explicit
+                   margin-bottom on each note instead. *@
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="20">
                     @foreach (var note in notesToShow)
                     {
-                        <div>
+                        <div style="margin-bottom:20px;">
                             <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
                             <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
                         </div>
