@@ -28,6 +28,11 @@
   - This file and the prod header at the top of `CLAUDE.md`.
   - The A2 fallback in `supabase/functions/agent-loop/index.ts`, if it was ever applied (see
     plan's Risks section) — record here if so.
+  - **All UI/agent feature work landed here since launch** (job numbering, Other Appointments,
+    the agent job-grounding fix, per-job chat scoping, Notes section, the two layout fixes —
+    see "Status" below for the full list) — not yet ported to dev. This is a large, real
+    divergence; a `dev-upstream` merge won't bring any of it in, since dev doesn't have it
+    either. Port deliberately (feature by feature) rather than via merge when the time comes.
 - **Merging from dev-upstream:** `git fetch dev-upstream && git merge dev-upstream/main`.
   `PROGRESS.md` (this file) will conflict on every merge since both repos rewrite it — resolve
   with `git checkout --ours PROGRESS.md`. After any merge, before pushing, re-run:
@@ -56,13 +61,46 @@
   - App/UI: push to `main` → `.github/workflows/deploy-pages.yml` → Pages.
   - Agent: `supabase functions deploy agent-loop --project-ref tapguiosrjbdusqyhxqe --use-api`
     (always `--use-api`, never a bare `functions deploy` with no name — see CLAUDE.md).
-- **Status as of 2026-11-07:** project created, migrations replayed (all 12, grants verified to
-  match dev's exact 19-grant/`authenticated`-only surface after discovering and fixing a
-  fresh-project default-privilege discrepancy), code edits in progress. Not yet live — Google
-  OAuth setup (dashboard, needs the user), repo creation + Pages enablement, agent-loop deploy,
-  and bootstrap data are still ahead. See the plan for the full step list and verification
-  checklist before calling this live.
-- **Out of scope for now** (see the plan's "Out of scope" section for the full list and why):
-  config indirection, an admin UI for accounts/members, a custom domain, photo-to-field
-  extraction (e.g. VIN from a photo), migrating dev's real data, prod operations
-  (backups/monitoring).
+- **Status as of 2026-11-08: live, verified, and actively iterated on.** Launched 2026-11-07
+  (migrations replayed, grants fixed to match dev exactly, OAuth configured, repo/Pages live,
+  `agent-loop` deployed, bootstrap data in, full verification checklist passed). Since launch,
+  substantial UI and agent work has landed here first and **not yet been ported to dev**:
+  - A stable, permanent "Job #N" number (`WorkflowDetail.razor`'s `JobNumber`, ranked by
+    `created_at` ascending), shown on the Jobs list, job overview, stage view heading, and
+    the Other Appointments list. Required adding `CreatedAt` to `ItemSummary` and the
+    `items` REST select (`WorkflowApiClient.GetItemsAsync`).
+  - An "Other Appointments" list on the Scheduling stage view (any stage whose checklist
+    includes `scheduled_at`): next 10 other jobs with a parseable date, excludes the job
+    being viewed.
+  - **A real agent bug, found via live testing, fixed in `supabase/functions/agent-loop`:**
+    with the full unscoped conversation history, the agent could write a value onto a
+    different, more-recently-discussed job instead of the one open in the UI. Fixed with:
+    `item_id` now optional on `move_stage`/`update_data`/`add_note` (server resolves it to
+    `selected_item_id` when omitted, not the model's guess); a much more forceful system-prompt
+    reminder of which job is open, including its stable number; and the "other jobs" queue is
+    now only sent when no job is open — while one is drilled into, the agent has zero
+    visibility into any other job (closes off future same-name-customer collisions, e.g. two
+    different "Bob"s, at the source rather than relying on the model to disambiguate).
+  - Per-job Claude conversation scoping: one message history per job
+    (`_messagesByJob` in `WorkflowDetail.razor`, keyed by item id) instead of one array for
+    the whole session — bounds token cost per request to the open job's own activity.
+    Deliberately not scoped further to per-stage (cross-stage memory within a job was judged
+    more valuable than the extra savings).
+  - A Notes section on the job overview page, reading back every `add_note` call (previously
+    write-only — the RPC/tool existed, nothing displayed it). New
+    `WorkflowApiClient.GetNotesAsync` + `ItemNote` record. Paired with a soft prompt nudge:
+    past 5 of the user's own messages in one job+stage, the agent is told to prefer
+    `add_note` over continuing to just talk about something.
+  - Two layout fixes: `.page-header-chat` centering, and a page-root `overflow-x: hidden`
+    backstop (text was running off the right edge instead of wrapping).
+  **Porting to dev:** none of this has been merged back yet. The agent-grounding fix in
+  particular is a real correctness bug that very likely exists in dev's `agent-loop` too,
+  just unconfirmed/untriggered so far — worth prioritizing if dev work resumes.
+- **Out of scope for now** (see the plan's "Out of scope" section for the full list and why,
+  plus several more deferred ideas raised during 2026-11-07/08 testing): config indirection,
+  an admin UI for accounts/members, a custom domain, photo-to-field extraction (e.g. VIN from
+  a photo), migrating dev's real data, prod operations (backups/monitoring), scheduling
+  visibility as an agent tool, an upcoming-appointments list on the intake screen (separate
+  from the Scheduling-stage one above), making this repo private (needs GitHub Pro), an
+  Anthropic spend alert (Console-side, not code), and job assignment/claiming (including at
+  intake) for multiple workers sharing one account's job queue.
