@@ -240,7 +240,10 @@ else
         {
             <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
         }
-        <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="3" Style="width:100%;" />
+        @* Rows alone (2 -> 3) didn't produce a visible height change -- the fluent-textarea web
+           component doesn't appear to size off its rows attribute reliably, so force the height
+           directly via CSS instead (2026-11-08). *@
+        <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="3" Style="width:100%; min-height:6rem;" />
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; margin-bottom:12px;">
             <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
                 @(_sending ? "Sending..." : "Send")
