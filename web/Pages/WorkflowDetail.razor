@@ -137,7 +137,8 @@ else
     else
     {
         <h1>@ItemLabelPlural</h1>
-        <FluentStack Orientation="Orientation.Vertical" VerticalGap="8">
+        <FluentLink @onclick="StartNewJob" Class="back-link">+ New @ItemLabelSingular</FluentLink>
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-top:12px;">
             @foreach (var item in _items)
             {
                 <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
@@ -147,7 +148,6 @@ else
                     <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
                 </FluentCard>
             }
-            <FluentLink @onclick="StartNewJob" Class="back-link">+ New @ItemLabelSingular</FluentLink>
         </FluentStack>
     }
 
