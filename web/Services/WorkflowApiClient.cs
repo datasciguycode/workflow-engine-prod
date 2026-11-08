@@ -8,6 +8,11 @@ public record StageSummary(string Id, string Title, int? SequenceOrder, bool IsI
 public record ItemSummary(string Id, string StageId, JsonObject Data, DateTimeOffset CreatedAt);
 public record ChatMessage(string Who, string Body, string? ItemId, string? StageId);
 public record ItemEventRow(string EventType, string? StageId, JsonObject? Data);
+// add_note's event data is a plain JSON string (to_jsonb(p_note)), not an object like
+// item.created/item.data_changed -- ItemEventRow.Data (typed JsonObject?) can't hold that
+// shape, so notes get their own fetch/record rather than forcing a cast that would silently
+// come back null (2026-11-07).
+public record ItemNote(string Text, string? StageId, DateTimeOffset CreatedAt);
 
 // PROD project config (workflow-engine-prod, created 2026-11-07). This is the only
 // per-environment value in the web app; see the config-indirection item in PROGRESS.md.
@@ -116,6 +121,23 @@ public class WorkflowApiClient
         )).ToList();
     }
 
+    // For display (see WorkflowDetail.razor's Notes section, added 2026-11-07): every add_note
+    // call for this item, most recent first. Kept separate from GetItemEventsAsync because a
+    // note's data is a plain JSON string (to_jsonb(p_note)), not an object.
+    public async Task<List<ItemNote>> GetNotesAsync(string itemId)
+    {
+        var req = await NewRequestAsync(HttpMethod.Get,
+            $"/rest/v1/item_events?item_id=eq.{itemId}&event_type=eq.item.note_added&select=data,stage_id,created_at&order=created_at.desc");
+        var res = await _http.SendAsync(req);
+        res.EnsureSuccessStatusCode();
+        var rows = await res.Content.ReadFromJsonAsync<List<JsonObject>>() ?? [];
+        return rows.Select(r => new ItemNote(
+            r["data"]!.GetValue<string>(),
+            r["stage_id"]?.GetValue<string>(),
+            r["created_at"]!.GetValue<DateTimeOffset>()
+        )).ToList();
+    }
+
     // Same RPC the agent's move_stage tool calls (supabase/functions/agent-loop/index.ts) --
     // used directly by the UI's "Done" button so advancing a stage doesn't require going through
     // chat once its checklist is already complete (2026-11-05).
@@ -137,7 +159,7 @@ public class WorkflowApiClient
     public async Task<(string Reply, JsonArray Messages)> SendAgentMessageAsync(
         string workflowId, JsonArray queue, JsonArray messages,
         string? selectedItemId = null, string? selectedItemLabel = null, string? selectedStageTitle = null,
-        int? selectedJobNumber = null)
+        int? selectedJobNumber = null, int? selectedStageMessageCount = null)
     {
         var body = new JsonObject
         {
@@ -148,6 +170,7 @@ public class WorkflowApiClient
             ["selected_item_label"] = selectedItemLabel,
             ["selected_stage_title"] = selectedStageTitle,
             ["selected_job_number"] = selectedJobNumber,
+            ["selected_stage_message_count"] = selectedStageMessageCount,
         };
         var req = await NewRequestAsync(HttpMethod.Post, "/functions/v1/agent-loop");
         req.Content = JsonContent.Create(body);

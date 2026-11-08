@@ -158,6 +158,34 @@ else
                 </div>
             }
         </FluentStack>
+
+        @* Detailed free-text commentary belongs here (via the agent's add_note tool), not piling
+           up as raw chat history -- notes are plain stored text, never replayed into the agent's
+           own conversation, so there's no token cost to keeping as many as needed (2026-11-07). *@
+        <h2>Notes</h2>
+        @if (_notes is null)
+        {
+            <FluentSpinner />
+        }
+        else if (_notes.Count == 0)
+        {
+            <p style="opacity:0.6;">No notes yet.</p>
+        }
+        else
+        {
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                @foreach (var note in _notes)
+                {
+                    <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
+                        <div style="opacity:0.6; font-size:0.85em;">
+                            @note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
+                            @if (note.StageId is not null) { <text> &middot; @StageTitle(note.StageId)</text> }
+                        </div>
+                        <div>@note.Text</div>
+                    </div>
+                }
+            </FluentStack>
+        }
     }
 
     @* No chat box on the job's own overview page (item selected, no stage drilled in) --
@@ -232,7 +260,25 @@ else
     private string ItemLabelPlural => ItemLabelSingular + "s";
     private string _draft = "";
     private bool _sending;
-    private JsonArray _messages = new();
+
+    // One Claude-facing conversation per job (keyed by item id; "__general__" covers the Jobs
+    // list / New Job screen, where no item is selected yet) instead of one array for the whole
+    // session -- so a request about Job #9 never resends Jobs #1-8's history, and token cost per
+    // request stays bounded by that one job's own activity (2026-11-07; not scoped further to
+    // per-stage, since cross-stage memory within a job -- e.g. recalling diagnosis notes while
+    // writing the estimate -- was judged more valuable than the extra savings).
+    private readonly Dictionary<string, JsonArray> _messagesByJob = new();
+    private string MessagesKey => _selectedItem?.Id ?? "__general__";
+    private JsonArray CurrentMessages()
+    {
+        if (!_messagesByJob.TryGetValue(MessagesKey, out var arr))
+        {
+            arr = new JsonArray();
+            _messagesByJob[MessagesKey] = arr;
+        }
+        return arr;
+    }
+
     private readonly List<(string Who, string Text, string? ItemId, string? StageId)> _chatLog = new();
 
     protected override async Task OnInitializedAsync()
@@ -368,10 +414,15 @@ else
     // have shown it, which is an acceptable gap for old test data.
     private readonly Dictionary<string, string?> _fieldStage = new();
 
+    private List<ItemNote>? _notes;
+
     private async Task LoadFieldStageMap(string itemId)
     {
         _fieldStage.Clear();
-        var events = await Api.GetItemEventsAsync(itemId);
+        var eventsTask = Api.GetItemEventsAsync(itemId);
+        var notesTask = Api.GetNotesAsync(itemId);
+        var events = await eventsTask;
+        _notes = await notesTask;
         foreach (var e in events)
         {
             if (e.Data is null) continue;
@@ -415,10 +466,12 @@ else
     // into something readable for display.
     private static string ChecklistLabel(string field) => Capitalize(field.Replace('_', ' '));
 
-    private void SelectItem(ItemSummary item)
+    private async Task SelectItem(ItemSummary item)
     {
         _selectedItem = item;
         _selectedStageId = null;
+        _notes = null; // show the spinner while this item's own notes load, not the last item's
+        await LoadFieldStageMap(item.Id);
     }
 
     private void StartNewJob()
@@ -514,13 +567,15 @@ else
         _draft = "";
         var itemId = _selectedItem?.Id;
         var stageId = _selectedStageId;
+        var messagesKey = MessagesKey;
         var wasNewJobMode = _newJobMode;
         var previousItemCount = _items!.Count;
         _chatLog.Add(("You", text, itemId, stageId));
         _sending = true;
         await Api.AddChatMessageAsync(WorkflowId, StoredWho("You"), text, itemId, stageId);
 
-        _messages.Add(new JsonObject { ["role"] = "user", ["content"] = text });
+        var currentMessages = CurrentMessages();
+        currentMessages.Add(new JsonObject { ["role"] = "user", ["content"] = text });
 
         try
         {
@@ -531,16 +586,23 @@ else
             // above. An empty queue means the model has nothing else to reference by name or
             // number, so there's nothing to confuse the open job with (2026-11-07).
             var queueForThisTurn = _selectedItem is null ? BuildQueueJson() : new JsonArray();
+            // How many of the user's own messages have been sent in this exact job+stage so far
+            // (including this one) -- lets the agent nudge toward add_note once a stage's chat
+            // runs long, rather than letting detail pile up indefinitely as raw conversation
+            // text that costs tokens on every later message in the same stage (2026-11-07).
+            var stageMessageCount = stageId is null ? (int?)null :
+                _chatLog.Count(l => l.Who == "You" && l.ItemId == itemId && l.StageId == stageId);
             var (reply, messages) = await Api.SendAgentMessageAsync(
-                WorkflowId, queueForThisTurn, _messages,
+                WorkflowId, queueForThisTurn, currentMessages,
                 selectedItemId: _selectedItem?.Id,
                 selectedItemLabel: _selectedItem is null ? null : ItemTitle(_selectedItem),
                 // Chat only exists on the Jobs list (no item) or a stage's own drilled-in view
                 // (both set) now that the job-overview page has no chat box of its own -- so
                 // _selectedStageId is always set here whenever _selectedItem is.
                 selectedStageTitle: _selectedStageId is not null ? StageTitle(_selectedStageId) : null,
-                selectedJobNumber: _selectedItem is null ? null : JobNumber(_selectedItem));
-            _messages = messages;
+                selectedJobNumber: _selectedItem is null ? null : JobNumber(_selectedItem),
+                selectedStageMessageCount: stageMessageCount);
+            _messagesByJob[messagesKey] = messages;
             _chatLog.Add(("Agent", reply, itemId, stageId));
             await Api.AddChatMessageAsync(WorkflowId, StoredWho("Agent"), reply, itemId, stageId);
             _items = await Api.GetItemsAsync(WorkflowId);

@@ -45,6 +45,11 @@ type RequestBody = {
   selected_item_label?: string;
   selected_stage_title?: string;
   selected_job_number?: number;
+  // Count of the user's own messages sent in this exact job+stage so far (including this one).
+  // Past a threshold, the system prompt nudges the agent to capture further detail via add_note
+  // instead of letting it accumulate as raw chat text (2026-11-07) -- notes are plain stored
+  // text, never replayed into later requests, so they don't grow token cost the way chat does.
+  selected_stage_message_count?: number;
 };
 
 // Thin wrapper around PostgREST, forwarding the CALLER's own JWT (not the service role key) so
@@ -131,7 +136,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "add_note",
-    description: "Add a free-text note to an item's history. Does not change the item's data. Omit item_id to target the job currently open in the UI (see the note above the queue) -- only pass item_id explicitly when the user's message clearly names a different job.",
+    description: "Add a free-text note to an item's history, shown to the user in the UI's own Notes section. Does not change the item's data. Prefer this over just replying in chat for any detailed commentary, context, or explanation that doesn't map to a checklist field or a direct instruction -- notes are the durable record for that kind of detail; chat is for short back-and-forth. Omit item_id to target the job currently open in the UI (see the note above the queue) -- only pass item_id explicitly when the user's message clearly names a different job.",
     input_schema: {
       type: "object",
       properties: {
@@ -195,6 +200,7 @@ function systemPrompt(
   selectedItemLabel?: string,
   selectedStageTitle?: string,
   selectedJobNumber?: number,
+  selectedStageMessageCount?: number,
 ) {
   // Restated close to every turn (this whole prompt is rebuilt fresh each request) and reinforced
   // by move_stage/update_data/add_note's own tool descriptions, because a full unscoped message
@@ -203,8 +209,17 @@ function systemPrompt(
   // appointment's date onto a different job that had just been created/discussed, instead of the
   // job actually open in the UI). The job number (if present) gives the model and the user a
   // shared, unambiguous way to refer to this exact job even when its label is generic.
+  // Nudges the agent to capture further detail as a note instead of letting the conversation run
+  // long -- notes are plain stored text the UI reads back directly, never replayed into later
+  // requests, so they don't add token cost to every subsequent message in this stage the way
+  // continued chat does. Deliberately a soft nudge in the model's own phrasing, not a disabled
+  // input box -- a hard block risks stopping someone mid-task right when they need one more
+  // exchange (2026-11-07).
+  const noteNudge = (selectedStageMessageCount ?? 0) >= 5
+    ? ` This stage's chat has already run ${selectedStageMessageCount} messages long. From here, prefer add_note over continuing to just talk about something -- if the user gives more free-form detail or commentary that isn't a direct instruction or a checklist-field value, save it with add_note and say so briefly, rather than only replying in chat.`
+    : "";
   const selectedContext = selectedItemId
-    ? `\nTHE USER IS CURRENTLY LOOKING AT ONE SPECIFIC JOB: Job #${selectedJobNumber ?? "?"}, "${selectedItemLabel ?? selectedItemId}" (id ${selectedItemId}), drilled into its "${selectedStageTitle ?? "unknown"}" stage's own view. For move_stage, update_data, and add_note: omit item_id entirely to target this job -- that is the default and correct choice for any message that doesn't clearly name a different job, REGARDLESS of which other jobs were created or discussed earlier in this same conversation. Only pass an explicit item_id when the user's current message itself names a different job (by job number, queue number, or a distinguishing detail like customer/vehicle) or asks to act on a job other than this one. Don't ask "which job?" just because other jobs also exist in the queue below -- the open one always wins unless the message says otherwise.\n`
+    ? `\nTHE USER IS CURRENTLY LOOKING AT ONE SPECIFIC JOB: Job #${selectedJobNumber ?? "?"}, "${selectedItemLabel ?? selectedItemId}" (id ${selectedItemId}), drilled into its "${selectedStageTitle ?? "unknown"}" stage's own view. For move_stage, update_data, and add_note: omit item_id entirely to target this job -- that is the default and correct choice for any message that doesn't clearly name a different job, REGARDLESS of which other jobs were created or discussed earlier in this same conversation. Only pass an explicit item_id when the user's current message itself names a different job (by job number, queue number, or a distinguishing detail like customer/vehicle) or asks to act on a job other than this one. Don't ask "which job?" just because other jobs also exist in the queue below -- the open one always wins unless the message says otherwise.${noteNudge}\n`
     : "";
   return `You are a workflow assistant for a mechanic-shop / task-tracking app. You act on the user's spoken-or-typed instructions using the tools available to you.
 
@@ -325,6 +340,7 @@ Deno.serve(async (req) => {
           body.selected_item_label,
           body.selected_stage_title,
           body.selected_job_number,
+          body.selected_stage_message_count,
         ),
         tools: TOOLS,
         thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
