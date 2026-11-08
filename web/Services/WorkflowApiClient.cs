@@ -154,6 +154,22 @@ public class WorkflowApiClient
             throw new HttpRequestException($"move_stage failed ({(int)res.StatusCode}): {await res.Content.ReadAsStringAsync()}");
     }
 
+    // Same RPC the agent's add_note tool calls -- used directly by the chat box's "Save as
+    // note" checkbox so logging a note is deterministic and doesn't require an AI round trip
+    // at all (2026-11-08).
+    public async Task AddNoteAsync(string itemId, string note)
+    {
+        var req = await NewRequestAsync(HttpMethod.Post, "/rest/v1/rpc/add_note");
+        req.Content = JsonContent.Create(new JsonObject
+        {
+            ["p_item_id"] = itemId,
+            ["p_note"] = note,
+        });
+        var res = await _http.SendAsync(req);
+        if (!res.IsSuccessStatusCode)
+            throw new HttpRequestException($"add_note failed ({(int)res.StatusCode}): {await res.Content.ReadAsStringAsync()}");
+    }
+
     // messages is the running Anthropic-shaped message array, passed through opaquely (text,
     // tool_use, and tool_result blocks all round-trip through here -- see agent-loop/index.ts).
     public async Task<(string Reply, JsonArray Messages)> SendAgentMessageAsync(

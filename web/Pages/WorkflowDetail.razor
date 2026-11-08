@@ -209,7 +209,7 @@ else
            but Safari still scroll-jumps the page to bring this box into view on every load, hiding
            the Talk button and back-link above it. The Talk button is the real focus mechanism now. *@
         <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="2" Style="width:100%;" />
-        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
             <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
                 @(_sending ? "Sending..." : "Send")
             </FluentButton>
@@ -220,6 +220,14 @@ else
                 </FluentButton>
             }
         </div>
+        @* Notes need a real item to attach to, so this only makes sense once a job is open --
+           never in New Job mode, where there's no item yet (2026-11-08). Checked, Send writes
+           straight to add_note and skips the agent entirely -- deterministic, no AI round trip,
+           so there's no more guessing whether a given message became a note. *@
+        @if (_selectedItem is not null)
+        {
+            <FluentCheckbox @bind-Value="_saveAsNote" Style="margin-bottom:12px; display:block;">Save as note</FluentCheckbox>
+        }
 
         @* Moved below the input (2026-11-06) -- a growing chat log used to push the input (and
            the Complete Stage button) further down the page with every reply, eventually off the
@@ -267,6 +275,7 @@ else
     private string ItemLabelPlural => ItemLabelSingular + "s";
     private string _draft = "";
     private bool _sending;
+    private bool _saveAsNote;
 
     // One Claude-facing conversation per job (keyed by item id; "__general__" covers the Jobs
     // list / New Job screen, where no item is selected yet) instead of one array for the whole
@@ -315,6 +324,7 @@ else
         "user" => "You",
         "agent" => "Agent",
         "error" => "Error",
+        "note" => "Note",
         _ => who,
     };
 
@@ -323,6 +333,7 @@ else
         "You" => "user",
         "Agent" => "agent",
         "Error" => "error",
+        "Note" => "note",
         _ => displayWho,
     };
 
@@ -580,6 +591,34 @@ else
         _chatLog.Add(("You", text, itemId, stageId));
         _sending = true;
         await Api.AddChatMessageAsync(WorkflowId, StoredWho("You"), text, itemId, stageId);
+
+        // "Save as note" bypasses the agent entirely -- no AI round trip, so there's no more
+        // guessing whether a given message became a note vs. stayed as plain chat; checking the
+        // box makes that decision explicit instead of leaving it to the model's judgment calls
+        // (content-based or the 5-message nudge below). Reset after every send so it has to be
+        // deliberately re-checked for the next message, rather than silently staying on and
+        // turning a later real instruction into a note instead of acting on it (2026-11-08).
+        if (_saveAsNote && itemId is not null)
+        {
+            _saveAsNote = false;
+            try
+            {
+                await Api.AddNoteAsync(itemId, text);
+                _notes = await Api.GetNotesAsync(itemId);
+                _chatLog.Add(("Note", "Saved as note.", itemId, stageId));
+                await Api.AddChatMessageAsync(WorkflowId, StoredWho("Note"), "Saved as note.", itemId, stageId);
+            }
+            catch (Exception ex)
+            {
+                _chatLog.Add(("Error", ex.Message, itemId, stageId));
+                await Api.AddChatMessageAsync(WorkflowId, StoredWho("Error"), ex.Message, itemId, stageId);
+            }
+            finally
+            {
+                _sending = false;
+            }
+            return;
+        }
 
         var currentMessages = CurrentMessages();
         currentMessages.Add(new JsonObject { ["role"] = "user", ["content"] = text });
