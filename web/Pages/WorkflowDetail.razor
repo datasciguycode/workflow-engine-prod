@@ -623,7 +623,6 @@ else
         var messagesKey = MessagesKey;
         var wasNewJobMode = _newJobMode;
         var previousItemCount = _items!.Count;
-        _chatLog.Add(("You", text, itemId, stageId));
         _sending = true;
 
         // "Save as note" bypasses the agent entirely -- no AI round trip, so there's no more
@@ -637,12 +636,11 @@ else
             _saveAsNote = false;
             try
             {
-                // Not persisted to chat_messages -- when saving as a note, the note itself is
-                // the record; nothing about it needs to also live in the chat history
-                // (2026-11-08).
+                // Neither shown in the chat log nor persisted to chat_messages -- when saving
+                // as a note, the note itself (visible in the Notes section) is the record, so
+                // the chat has nothing to add (2026-11-08).
                 await Api.AddNoteAsync(itemId, text, stageId);
                 _notes = await Api.GetNotesAsync(itemId);
-                _chatLog.Add(("Note", "Saved as note.", itemId, stageId));
             }
             catch (Exception ex)
             {
@@ -656,6 +654,7 @@ else
             return;
         }
 
+        _chatLog.Add(("You", text, itemId, stageId));
         await Api.AddChatMessageAsync(WorkflowId, StoredWho("You"), text, itemId, stageId);
 
         var currentMessages = CurrentMessages();
