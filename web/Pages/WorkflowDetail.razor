@@ -138,17 +138,53 @@ else
     {
         <h1>@ItemLabelPlural</h1>
         <FluentLink @onclick="StartNewJob" Class="back-link">+ New @ItemLabelSingular</FluentLink>
-        <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-top:12px;">
-            @foreach (var item in _items)
+
+        @* Tap-to-search (2026-11-08): no live-as-you-type filtering, so searching never fires a
+           request per keystroke -- the box just holds text until Search is tapped, and runs
+           server-side via search_items (matches job data, stage title, and job number; see
+           that migration) rather than filtering the already-loaded _items client-side. *@
+        <div style="display:flex; gap:8px; margin-top:12px; align-items:flex-start;">
+            <FluentTextInput @bind-Value="_searchQuery" Placeholder="Search jobs..." Style="flex:1;"
+                              @onkeyup="@(async (KeyboardEventArgs e) => { if (e.Key == "Enter") await RunSearch(); })" />
+            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_searching" @onclick="RunSearch">
+                @(_searching ? "..." : "Search")
+            </FluentButton>
+            @if (_searchResults is not null)
             {
-                <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
-                    <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                        <strong style="color:var(--app-accent);">#@JobNumber(item) @ItemTitle(item) &rarr;</strong>
-                    </div>
-                    <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
-                </FluentCard>
+                <FluentButton @onclick="ClearSearch">Clear</FluentButton>
             }
-        </FluentStack>
+        </div>
+
+        @if (_searchResults is not null)
+        {
+            <p style="opacity:0.6; margin-top:8px;">@_searchResults.Count result(s) for "@_searchQuery"</p>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-top:8px;">
+                @foreach (var result in _searchResults)
+                {
+                    var item = new ItemSummary(result.Id, result.StageId, result.Data, result.CreatedAt);
+                    <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
+                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
+                            <strong style="color:var(--app-accent);">#@result.JobNumber @ItemTitle(item) &rarr;</strong>
+                        </div>
+                        <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
+                    </FluentCard>
+                }
+            </FluentStack>
+        }
+        else
+        {
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-top:12px;">
+                @foreach (var item in _items)
+                {
+                    <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
+                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
+                            <strong style="color:var(--app-accent);">#@JobNumber(item) @ItemTitle(item) &rarr;</strong>
+                        </div>
+                        <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
+                    </FluentCard>
+                }
+            </FluentStack>
+        }
     }
 
     @if (_selectedStageId is null && _selectedItem is not null)
@@ -261,6 +297,33 @@ else
     private WorkflowSummary? _workflow;
     private List<StageSummary>? _stages;
     private List<ItemSummary>? _items;
+
+    // Jobs-list search (2026-11-08): tap-to-search, not live-as-you-type -- _searchResults stays
+    // null until Search is tapped, which is also what the Jobs list checks to decide whether to
+    // render _items (nothing searched yet) or these results instead.
+    private string _searchQuery = "";
+    private List<ItemSearchResult>? _searchResults;
+    private bool _searching;
+
+    private async Task RunSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery) || _searching) return;
+        _searching = true;
+        try
+        {
+            _searchResults = await Api.SearchItemsAsync(WorkflowId, _searchQuery);
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private void ClearSearch()
+    {
+        _searchQuery = "";
+        _searchResults = null;
+    }
     private string? _error;
 
     // Drill-down state: null/null = Jobs list; item set, stage null = job detail (stages);

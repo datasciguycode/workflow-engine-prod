@@ -6,6 +6,10 @@ namespace WorkflowApp.Web.Services;
 public record WorkflowSummary(string Id, string Name, string ItemLabel);
 public record StageSummary(string Id, string Title, int? SequenceOrder, bool IsInitial, bool IsTerminal, List<string> Checklist);
 public record ItemSummary(string Id, string StageId, JsonObject Data, DateTimeOffset CreatedAt);
+// search_items RPC result (2026-11-08) -- same shape as ItemSummary plus the job number computed
+// server-side (1-based position among the workflow's items ordered by created_at), so the Jobs
+// list's search results don't need the full unfiltered item list just to label "Job #N".
+public record ItemSearchResult(string Id, string StageId, JsonObject Data, DateTimeOffset CreatedAt, long JobNumber);
 public record ChatMessage(string Who, string Body, string? ItemId, string? StageId);
 public record ItemEventRow(string EventType, string? StageId, JsonObject? Data);
 // add_note's event data is a plain JSON string (to_jsonb(p_note)), not an object like
@@ -100,6 +104,30 @@ public class WorkflowApiClient
             r["stage_id"]!.GetValue<string>(),
             r["data"]!.AsObject(),
             r["created_at"]!.GetValue<DateTimeOffset>()
+        )).ToList();
+    }
+
+    // Tap-to-search on the Jobs list (2026-11-08) -- runs server-side via the search_items RPC
+    // instead of loading every item and filtering client-side, so the Jobs list itself can stay
+    // on a cheap default fetch (or, later, a paged one) regardless of search volume. See
+    // supabase/migrations/20261108030000_add_search_items.sql for what it matches against.
+    public async Task<List<ItemSearchResult>> SearchItemsAsync(string workflowId, string query)
+    {
+        var req = await NewRequestAsync(HttpMethod.Post, "/rest/v1/rpc/search_items");
+        req.Content = JsonContent.Create(new JsonObject
+        {
+            ["p_workflow_id"] = workflowId,
+            ["p_query"] = query,
+        });
+        var res = await _http.SendAsync(req);
+        res.EnsureSuccessStatusCode();
+        var rows = await res.Content.ReadFromJsonAsync<List<JsonObject>>() ?? [];
+        return rows.Select(r => new ItemSearchResult(
+            r["id"]!.GetValue<string>(),
+            r["stage_id"]!.GetValue<string>(),
+            r["data"]!.AsObject(),
+            r["created_at"]!.GetValue<DateTimeOffset>(),
+            r["job_number"]!.GetValue<long>()
         )).ToList();
     }
 
