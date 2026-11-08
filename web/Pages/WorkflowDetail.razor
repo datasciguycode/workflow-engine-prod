@@ -109,11 +109,9 @@ else
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
                 @foreach (var note in stageNotes)
                 {
-                    <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                        <div style="opacity:0.6; font-size:0.85em;">
-                            @note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
-                        </div>
-                        <div>@note.Text</div>
+                    <div>
+                        <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
                     </div>
                 }
             </FluentStack>
@@ -210,11 +208,9 @@ else
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
                 @foreach (var note in jobNotes)
                 {
-                    <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                        <div style="opacity:0.6; font-size:0.85em;">
-                            @note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
-                        </div>
-                        <div>@note.Text</div>
+                    <div>
+                        <div style="opacity:0.6; font-size:0.85em;">@note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                        <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">@note.Text</div>
                     </div>
                 }
             </FluentStack>
