@@ -209,7 +209,11 @@ else
            but Safari still scroll-jumps the page to bring this box into view on every load, hiding
            the Talk button and back-link above it. The Talk button is the real focus mechanism now. *@
         <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="2" Style="width:100%;" />
-        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;">
+        @* Explicit width/box-sizing here mirrors the fluent-text-area rule in app.css -- without
+           it this row's right edge drifted past the textbox's own right edge (2026-11-08).
+           space-between (not margin-left:auto) keeps the checkbox pinned left and Send/Complete
+           Stage pinned right without relying on an item's own auto margin. *@
+        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; width:100%; max-width:100%; box-sizing:border-box;">
             @* Notes need a real item to attach to, so this only makes sense once a job is open --
                never in New Job mode, where there's no item yet (2026-11-08). Checked, Send writes
                straight to add_note and skips the agent entirely -- deterministic, no AI round
@@ -218,17 +222,17 @@ else
             {
                 <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
             }
-            @* margin-left:auto pushes Send (and Complete Stage after it) to the right edge of the
-               textbox above, while the checkbox stays anchored on the left (2026-11-08). *@
-            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" Style="margin-left:auto;" @onclick="Send">
-                @(_sending ? "Sending..." : "Send")
-            </FluentButton>
-            @if (_selectedStageId is not null && DoneNextStage() is { } nextStage)
-            {
-                <FluentButton Appearance="ButtonAppearance.Primary" Disabled="_movingStage" @onclick="() => DoneMoveToNextStage(nextStage.Id)">
-                    Complete Stage
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
+                    @(_sending ? "Sending..." : "Send")
                 </FluentButton>
-            }
+                @if (_selectedStageId is not null && DoneNextStage() is { } nextStage)
+                {
+                    <FluentButton Appearance="ButtonAppearance.Primary" Disabled="_movingStage" @onclick="() => DoneMoveToNextStage(nextStage.Id)">
+                        Complete Stage
+                    </FluentButton>
+                }
+            </div>
         </div>
 
         @* Moved below the input (2026-11-06) -- a growing chat log used to push the input (and
