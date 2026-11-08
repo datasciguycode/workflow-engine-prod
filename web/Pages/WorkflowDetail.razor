@@ -209,10 +209,18 @@ else
            but Safari still scroll-jumps the page to bring this box into view on every load, hiding
            the Talk button and back-link above it. The Talk button is the real focus mechanism now. *@
         <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="2" Style="width:100%;" />
-        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;">
             <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
                 @(_sending ? "Sending..." : "Send")
             </FluentButton>
+            @* Notes need a real item to attach to, so this only makes sense once a job is open --
+               never in New Job mode, where there's no item yet (2026-11-08). Checked, Send writes
+               straight to add_note and skips the agent entirely -- deterministic, no AI round
+               trip, so there's no more guessing whether a given message became a note. *@
+            @if (_selectedItem is not null)
+            {
+                <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
+            }
             @if (_selectedStageId is not null && DoneNextStage() is { } nextStage)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary" Disabled="_movingStage" @onclick="() => DoneMoveToNextStage(nextStage.Id)">
@@ -220,14 +228,6 @@ else
                 </FluentButton>
             }
         </div>
-        @* Notes need a real item to attach to, so this only makes sense once a job is open --
-           never in New Job mode, where there's no item yet (2026-11-08). Checked, Send writes
-           straight to add_note and skips the agent entirely -- deterministic, no AI round trip,
-           so there's no more guessing whether a given message became a note. *@
-        @if (_selectedItem is not null)
-        {
-            <FluentCheckbox @bind-Value="_saveAsNote" Style="margin-bottom:12px; display:block;">Save as note</FluentCheckbox>
-        }
 
         @* Moved below the input (2026-11-06) -- a growing chat log used to push the input (and
            the Complete Stage button) further down the page with every reply, eventually off the
