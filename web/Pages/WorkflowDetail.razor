@@ -37,9 +37,9 @@ else
         <div class="page-header-chat">
             @* Hidden on the bare Jobs list (2026-11-08): chat should only ever create a job or
                act on one you've actually opened, never reference another job by name/number
-               from the list -- so it only appears once "+ New Job" is clicked, or once a job's
-               stage view is open. *@
-            @if (_newJobMode || _selectedStageId is not null)
+               from the list -- so it only appears once "+ New Job" is clicked, or once a job
+               (overview or a specific stage) is open. *@
+            @if (_newJobMode || _selectedItem is not null)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary" @onclick="FocusChatInput">
                     &#128172; Chat
@@ -90,6 +90,33 @@ else
                     }
                 </FluentStack>
             }
+        }
+
+        @* Notes made while drilled into THIS stage -- job-level notes (no stage) show on the job
+           overview page instead (2026-11-08); see NotesFor(). *@
+        <h2>Notes</h2>
+        var stageNotes = NotesFor(_selectedStageId);
+        @if (_notes is null)
+        {
+            <FluentSpinner />
+        }
+        else if (stageNotes.Count == 0)
+        {
+            <p style="opacity:0.6;">No notes yet.</p>
+        }
+        else
+        {
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                @foreach (var note in stageNotes)
+                {
+                    <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
+                        <div style="opacity:0.6; font-size:0.85em;">
+                            @note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
+                        </div>
+                        <div>@note.Text</div>
+                    </div>
+                }
+            </FluentStack>
         }
     }
     else if (_selectedItem is not null)
@@ -165,25 +192,27 @@ else
 
         @* Detailed free-text commentary belongs here (via the agent's add_note tool), not piling
            up as raw chat history -- notes are plain stored text, never replayed into the agent's
-           own conversation, so there's no token cost to keeping as many as needed (2026-11-07). *@
+           own conversation, so there's no token cost to keeping as many as needed (2026-11-07).
+           Job-level only (no stage) -- a note made while drilled into a specific stage shows on
+           that stage's own page instead (2026-11-08); see NotesFor(). *@
         <h2>Notes</h2>
+        var jobNotes = NotesFor(null);
         @if (_notes is null)
         {
             <FluentSpinner />
         }
-        else if (_notes.Count == 0)
+        else if (jobNotes.Count == 0)
         {
             <p style="opacity:0.6;">No notes yet.</p>
         }
         else
         {
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
-                @foreach (var note in _notes)
+                @foreach (var note in jobNotes)
                 {
                     <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
                         <div style="opacity:0.6; font-size:0.85em;">
                             @note.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)
-                            @if (note.StageId is not null) { <text> &middot; @StageTitle(note.StageId)</text> }
                         </div>
                         <div>@note.Text</div>
                     </div>
@@ -192,16 +221,14 @@ else
         }
     }
 
-    @* No chat box on the job's own overview page (item selected, no stage drilled in) --
-       2026-11-04: intake-style details go on the stage that's actually gathering them, and
-       update_data always tags a field by the item's real current stage regardless of which view
-       you typed from, so having a second chat box here just let the same data be entered from
-       two places with no clear reason to prefer either. Stage-specific chat now only lives on
-       the stage's own drilled-in view below.
-       Also no chat box on the bare Jobs list (2026-11-08) -- it only appears once "+ New Job"
-       is clicked (create-only there) or once a job's stage view is open (scoped to that job
-       alone). See the header button above for the matching condition. *@
-    @if (_newJobMode || _selectedStageId is not null)
+    @* The job overview page gets its own chat box again (2026-11-08) -- reversing 2026-11-04's
+       removal, now that notes can be tagged job-level (no stage) vs. stage-level: the overview
+       page is where a job-level note belongs, so it needs a "Save as note" checkbox and a Send
+       button of its own, not just the stage views.
+       Still no chat box on the bare Jobs list -- it only appears once "+ New Job" is clicked
+       (create-only there) or once a job (overview or a specific stage) is open. See the header
+       button above for the matching condition. *@
+    @if (_newJobMode || _selectedItem is not null)
     {
         <h2>Chat</h2>
 
@@ -435,6 +462,13 @@ else
 
     private List<ItemNote>? _notes;
 
+    // null stageId -> job-level notes (shown on the job overview page); a real stage id ->
+    // that stage's own notes (shown on its drilled-in view). Split by StageId alone, not by
+    // anything else, so a note's home page is decided entirely by where it was saved from
+    // (2026-11-08).
+    private List<ItemNote> NotesFor(string? stageId) =>
+        _notes?.Where(n => n.StageId == stageId).ToList() ?? new List<ItemNote>();
+
     private async Task LoadFieldStageMap(string itemId)
     {
         _fieldStage.Clear();
@@ -604,7 +638,7 @@ else
             _saveAsNote = false;
             try
             {
-                await Api.AddNoteAsync(itemId, text);
+                await Api.AddNoteAsync(itemId, text, stageId);
                 _notes = await Api.GetNotesAsync(itemId);
                 _chatLog.Add(("Note", "Saved as note.", itemId, stageId));
                 await Api.AddChatMessageAsync(WorkflowId, StoredWho("Note"), "Saved as note.", itemId, stageId);
@@ -645,10 +679,10 @@ else
                 WorkflowId, queueForThisTurn, currentMessages,
                 selectedItemId: _selectedItem?.Id,
                 selectedItemLabel: _selectedItem is null ? null : ItemTitle(_selectedItem),
-                // Chat only exists on the Jobs list (no item) or a stage's own drilled-in view
-                // (both set) now that the job-overview page has no chat box of its own -- so
-                // _selectedStageId is always set here whenever _selectedItem is.
+                // null on the job overview page (item selected, no stage drilled in) -- that's
+                // what makes an agent-written add_note there land as a job-level note (2026-11-08).
                 selectedStageTitle: _selectedStageId is not null ? StageTitle(_selectedStageId) : null,
+                selectedStageId: _selectedStageId,
                 selectedJobNumber: _selectedItem is null ? null : JobNumber(_selectedItem),
                 selectedStageMessageCount: stageMessageCount);
             _messagesByJob[messagesKey] = messages;

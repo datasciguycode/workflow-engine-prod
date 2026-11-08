@@ -44,6 +44,11 @@ type RequestBody = {
   selected_item_id?: string;
   selected_item_label?: string;
   selected_stage_title?: string;
+  // Raw id of the stage drilled into, if any -- distinct from selected_stage_title (display-only).
+  // add_note needs the real id to tag a note the same way the UI's own "Save as note" checkbox
+  // does: that stage's id when one is open, or omitted for a job-level note made from the job
+  // overview page (2026-11-08).
+  selected_stage_id?: string;
   selected_job_number?: number;
   // Count of the user's own messages sent in this exact job+stage so far (including this one).
   // Past a threshold, the system prompt nudges the agent to capture further detail via add_note
@@ -155,7 +160,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "add_note",
-    description: "Add a free-text note to an item's history, shown to the user in the UI's own Notes section. Does not change the item's data. Prefer this over just replying in chat for any detailed commentary, context, or explanation that doesn't map to a checklist field or a direct instruction -- notes are the durable record for that kind of detail; chat is for short back-and-forth. Omit item_id to target the job currently open in the UI (see the note above the queue) -- only pass item_id explicitly when the user's message clearly names a different job.",
+    description: "Add a free-text note to an item's history, shown to the user in the UI's own Notes section. Does not change the item's data. Prefer this over just replying in chat for any detailed commentary, context, or explanation that doesn't map to a checklist field or a direct instruction -- notes are the durable record for that kind of detail; chat is for short back-and-forth. Omit item_id to target the job currently open in the UI (see the note above the queue) -- only pass item_id explicitly when the user's message clearly names a different job. The note is automatically tagged with whichever stage (if any) is currently drilled into in the UI -- a job-level note vs. a stage-specific one is decided entirely by where the user is looking, not by anything you choose here.",
     input_schema: {
       type: "object",
       properties: {
@@ -173,6 +178,7 @@ async function callTool(
   workflowId: string,
   jwt: string,
   selectedItemId: string | undefined,
+  selectedStageId: string | undefined,
 ) {
   // For every tool that targets an existing item, the model may omit item_id to mean "the job
   // currently open in the UI" -- resolved HERE, server-side, from the request body's own
@@ -203,9 +209,14 @@ async function callTool(
       });
     case "add_note":
       if (!itemId) throw new Error("no job is open in the UI and no item_id was given");
+      // Only tag the note with selectedStageId when the note is actually about the job that's
+      // open in the UI (itemId fell through to selectedItemId, i.e. the model omitted item_id).
+      // An explicit item_id naming some OTHER job has no known stage context here without an
+      // extra lookup, so that note lands as job-level (null) rather than guessing a stage.
       return await restFetch("/rpc/add_note", jwt, {
         p_item_id: itemId,
         p_note: input.note,
+        p_stage_id: input.item_id ? null : (selectedStageId ?? null),
       });
     default:
       throw new Error(`unknown tool: ${name}`);
@@ -237,8 +248,14 @@ function systemPrompt(
   const noteNudge = (selectedStageMessageCount ?? 0) >= 5
     ? ` This stage's chat has already run ${selectedStageMessageCount} messages long. From here, prefer add_note over continuing to just talk about something -- if the user gives more free-form detail or commentary that isn't a direct instruction or a checklist-field value, save it with add_note and say so briefly, rather than only replying in chat.`
     : "";
+  // selectedStageTitle is only set once a stage is actually drilled into -- the job overview page
+  // (item selected, no stage) also has its own chat box now (2026-11-08), so this can't assume a
+  // stage is always present just because an item is.
+  const stageContext = selectedStageTitle
+    ? `drilled into its "${selectedStageTitle}" stage's own view`
+    : "on its own overview page (no particular stage drilled into)";
   const selectedContext = selectedItemId
-    ? `\nTHE USER IS CURRENTLY LOOKING AT ONE SPECIFIC JOB: Job #${selectedJobNumber ?? "?"}, "${selectedItemLabel ?? selectedItemId}" (id ${selectedItemId}), drilled into its "${selectedStageTitle ?? "unknown"}" stage's own view. For move_stage, update_data, and add_note: omit item_id entirely to target this job -- that is the default and correct choice for any message that doesn't clearly name a different job, REGARDLESS of which other jobs were created or discussed earlier in this same conversation. Only pass an explicit item_id when the user's current message itself names a different job (by job number, queue number, or a distinguishing detail like customer/vehicle) or asks to act on a job other than this one. Don't ask "which job?" just because other jobs also exist in the queue below -- the open one always wins unless the message says otherwise.${noteNudge}\n`
+    ? `\nTHE USER IS CURRENTLY LOOKING AT ONE SPECIFIC JOB: Job #${selectedJobNumber ?? "?"}, "${selectedItemLabel ?? selectedItemId}" (id ${selectedItemId}), ${stageContext}. For move_stage, update_data, and add_note: omit item_id entirely to target this job -- that is the default and correct choice for any message that doesn't clearly name a different job, REGARDLESS of which other jobs were created or discussed earlier in this same conversation. Only pass an explicit item_id when the user's current message itself names a different job (by job number, queue number, or a distinguishing detail like customer/vehicle) or asks to act on a job other than this one. Don't ask "which job?" just because other jobs also exist in the queue below -- the open one always wins unless the message says otherwise. A note added here is automatically tagged with the stage named above, if any -- it's a job-level note (no stage) when the user is on the overview page.${noteNudge}\n`
     : "";
   return `You are a workflow assistant for a mechanic-shop / task-tracking app. You act on the user's spoken-or-typed instructions using the tools available to you.
 
@@ -398,6 +415,7 @@ Deno.serve(async (req) => {
           body.workflow_id,
           jwt,
           body.selected_item_id,
+          body.selected_stage_id,
         );
         toolResults.push({
           type: "tool_result",

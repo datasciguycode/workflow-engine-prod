@@ -156,14 +156,16 @@ public class WorkflowApiClient
 
     // Same RPC the agent's add_note tool calls -- used directly by the chat box's "Save as
     // note" checkbox so logging a note is deterministic and doesn't require an AI round trip
-    // at all (2026-11-08).
-    public async Task AddNoteAsync(string itemId, string note)
+    // at all (2026-11-08). stageId is the stage page the note was saved from, or null when saved
+    // from the job overview page -- that's what makes it a job-level vs. stage-level note.
+    public async Task AddNoteAsync(string itemId, string note, string? stageId)
     {
         var req = await NewRequestAsync(HttpMethod.Post, "/rest/v1/rpc/add_note");
         req.Content = JsonContent.Create(new JsonObject
         {
             ["p_item_id"] = itemId,
             ["p_note"] = note,
+            ["p_stage_id"] = stageId,
         });
         var res = await _http.SendAsync(req);
         if (!res.IsSuccessStatusCode)
@@ -175,7 +177,7 @@ public class WorkflowApiClient
     public async Task<(string Reply, JsonArray Messages)> SendAgentMessageAsync(
         string workflowId, JsonArray queue, JsonArray messages,
         string? selectedItemId = null, string? selectedItemLabel = null, string? selectedStageTitle = null,
-        int? selectedJobNumber = null, int? selectedStageMessageCount = null)
+        string? selectedStageId = null, int? selectedJobNumber = null, int? selectedStageMessageCount = null)
     {
         var body = new JsonObject
         {
@@ -185,6 +187,7 @@ public class WorkflowApiClient
             ["selected_item_id"] = selectedItemId,
             ["selected_item_label"] = selectedItemLabel,
             ["selected_stage_title"] = selectedStageTitle,
+            ["selected_stage_id"] = selectedStageId,
             ["selected_job_number"] = selectedJobNumber,
             ["selected_stage_message_count"] = selectedStageMessageCount,
         };
