@@ -210,9 +210,6 @@ else
            the Talk button and back-link above it. The Talk button is the real focus mechanism now. *@
         <FluentTextArea id="chat-input" @bind-Value="_draft" Rows="2" Style="width:100%;" />
         <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;">
-            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
-                @(_sending ? "Sending..." : "Send")
-            </FluentButton>
             @* Notes need a real item to attach to, so this only makes sense once a job is open --
                never in New Job mode, where there's no item yet (2026-11-08). Checked, Send writes
                straight to add_note and skips the agent entirely -- deterministic, no AI round
@@ -221,6 +218,9 @@ else
             {
                 <FluentCheckbox @bind-Value="_saveAsNote">Save as note</FluentCheckbox>
             }
+            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_sending" @onclick="Send">
+                @(_sending ? "Sending..." : "Send")
+            </FluentButton>
             @if (_selectedStageId is not null && DoneNextStage() is { } nextStage)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary" Disabled="_movingStage" @onclick="() => DoneMoveToNextStage(nextStage.Id)">
