@@ -53,21 +53,74 @@ else
 
     @if (_selectedStageId is not null && _selectedItem is not null)
     {
-        <h1 style="overflow-wrap:anywhere; word-break:break-word;">Job #@JobNumber(_selectedItem) &mdash; @StageTitle(_selectedStageId)</h1>
+        <h1 style="overflow-wrap:anywhere; word-break:break-word;">
+            @ItemDisplayName(_selectedItem, _selectedStageId)
+            @if (string.Equals(_workflow?.ItemLabel, "job", StringComparison.OrdinalIgnoreCase))
+            {
+                <text> &mdash; @StageTitle(_selectedStageId)</text>
+            }
+        </h1>
         @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId) is { Checklist.Count: > 0 } selectedStage)
         {
+            @* One merged line per field instead of a checkbox list plus a separate value list
+               below it (2026-11-13, user request) -- when a value exists, it's shown right
+               before the label (with its unit glued on for _g/_lbs-style fields, e.g. "43g
+               Protein") instead of repeating the label a second time further down the page.
+               Only shown at all when this IS the item's actual current stage -- item.data is one
+               flat object, not split per stage, so a workflow whose stages reuse field names
+               (e.g. Nutrition Tracker's protein_g on every meal) would otherwise show whatever
+               the item's real current stage holds under EVERY stage's preview, including ones
+               the item has already left or never reached (2026-11-13 user report: "whenever I go
+               to a different stage, it has the same micronutrient grams on each page"). *@
+            var onCurrentStage = selectedStage.Id == _selectedItem.StageId;
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="2" Style="margin-bottom:12px;">
                 @foreach (var field in selectedStage.Checklist)
                 {
-                    var done = _selectedItem.Data.TryGetPropertyValue(field, out var v) && v is not null;
-                    <div style="opacity:0.75;">@(done ? "☑" : "☐") @ChecklistLabel(field)</div>
+                    var hasRawValue = _selectedItem.Data.TryGetPropertyValue(field, out var v) && v is not null;
+                    var hasValue = onCurrentStage && hasRawValue;
+                    var (baseLabel, unit) = FieldLabelAndUnit(field);
+                    var star = selectedStage.OptionalChecklist.Contains(field) ? "" : " *";
+                    <div style="opacity:0.75; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
+                        @(hasValue ? "☑" : "☐")
+                        @if (!hasValue)
+                        {
+                            @($"{baseLabel}{star}")
+                        }
+                        else if (unit.Length > 0)
+                        {
+                            @($"{FieldText(field, v)}{unit} {baseLabel}{star}")
+                        }
+                        else
+                        {
+                            @($"{baseLabel}{star}: {FieldText(field, v)}")
+                        }
+                    </div>
                 }
             </FluentStack>
         }
-        @foreach (var (key, value) in ItemFieldsForStage(_selectedItem, _selectedStageId))
+        @if (_selectedStageId == _selectedItem.StageId && _stages.FirstOrDefault(s => s.Id == _selectedStageId)?.Checklist.Contains("vin") == true)
         {
-            <div class="field-row" style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                <span class="field-key">@ChecklistLabel(key):</span> @FieldText(key, value)
+            @* Only offered while actually sitting on this stage, not while previewing it from
+               the Stages list (2026-11-13) -- scanning writes straight into the item's one flat
+               data object via update_data, which has no idea which stage you were LOOKING at;
+               it would land under whichever stage the item is really in, so showing this button
+               during a preview of some other stage would silently misattribute the write. *@
+            @* Photo-picker file input styled as a button (2026-11-11). No "capture" attribute --
+               that would force the camera open directly and skip the photo-library option on
+               some browsers (2026-11-12 user report: couldn't load an existing photo at all).
+               accept="image/*" alone still lets the OS offer "Take Photo" as a choice too. The
+               photo itself is never stored or kept around after the scan (see ScanVinAsync). *@
+            <div style="margin-bottom:12px;">
+                <label for="vin-photo-input" class="fluent-button-like" style="display:inline-block; cursor:pointer;">
+                    <FluentButton Appearance="ButtonAppearance.Primary" Disabled="_scanningVin">
+                        @(_scanningVin ? "Scanning..." : "Scan VIN")
+                    </FluentButton>
+                </label>
+                <InputFile id="vin-photo-input" OnChange="OnVinPhotoSelected" accept="image/*" style="display:none;" />
+                @if (_vinScanError is not null)
+                {
+                    <p style="opacity:0.75; color:var(--colorPaletteRedForeground1, #c00);">@_vinScanError</p>
+                }
             </div>
         }
         @if (_stages.FirstOrDefault(s => s.Id == _selectedStageId)?.Checklist.Contains("scheduled_at") == true)
@@ -83,8 +136,11 @@ else
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-bottom:12px;">
                     @foreach (var (item, when) in upcoming)
                     {
-                        <div style="opacity:0.85;">
-                            <div>Job #@JobNumber(item) &mdash; @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                        @* VerticalGap alone doesn't reliably produce visible spacing in this
+                           FluentUI version (same issue hit on Notes/Chat), hence the explicit
+                           margin here too (2026-11-10). *@
+                        <div style="opacity:0.85; margin-bottom:12px;">
+                            <div>@ItemDisplayName(item) &mdash; @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
                             <div>@ItemTitle(item)</div>
                         </div>
                     }
@@ -94,7 +150,7 @@ else
     }
     else if (_selectedItem is not null)
     {
-        <h1>Job #@JobNumber(_selectedItem)</h1>
+        <h1>@ItemDisplayName(_selectedItem)</h1>
         <h2>Stages</h2>
         <FluentStack Orientation="Orientation.Vertical" VerticalGap="6">
             @foreach (var stage in _stages.OrderBy(s => s.SequenceOrder ?? int.MaxValue))
@@ -108,8 +164,13 @@ else
                         <div style="margin-top:6px; display:flex; flex-direction:column; gap:2px;" @onclick:stopPropagation="true">
                             @foreach (var field in stage.Checklist)
                             {
-                                var done = _selectedItem.Data.TryGetPropertyValue(field, out var v) && v is not null;
-                                <div style="opacity:0.75; font-size:0.9em;">@(done ? "☑" : "☐") @ChecklistLabel(field)</div>
+                                // Same current-stage-only gating as the stage-detail view (2026-11-13) --
+                                // without it, every stage card shows whichever stage the item is
+                                // ACTUALLY on as "done" for any field name it shares (e.g. every
+                                // Nutrition Tracker meal stage, all identical checklists).
+                                var hasRawValue = _selectedItem.Data.TryGetPropertyValue(field, out var v) && v is not null;
+                                var done = isCurrent && hasRawValue;
+                                <div style="opacity:0.75; font-size:0.9em;">@(done ? "☑" : "☐") @ChecklistLabel(stage, field)</div>
                             }
                         </div>
                     }
@@ -128,16 +189,42 @@ else
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="2">
                     @foreach (var field in initialStage.Checklist)
                     {
-                        <div style="opacity:0.75;">&#9744; @ChecklistLabel(field)</div>
+                        <div style="opacity:0.75;">&#9744; @ChecklistLabel(initialStage, field)</div>
                     }
                 </FluentStack>
             }
+        }
+
+        @* Read-only lookup for whoever is taking the call (2026-11-10): Intake never writes
+           scheduled_at itself (that still only happens once a job reaches Scheduling), so this
+           just surfaces the same upcoming-appointments view early, before a job even exists. *@
+        var upcomingAtIntake = UpcomingAppointments().ToList();
+        <h2>Other Appointments:</h2>
+        @if (upcomingAtIntake.Count == 0)
+        {
+            <p style="opacity:0.6;">No upcoming appointments scheduled.</p>
+        }
+        else
+        {
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-bottom:12px;">
+                @foreach (var (item, when) in upcomingAtIntake)
+                {
+                    <div style="opacity:0.85; margin-bottom:12px;">
+                        <div>@ItemDisplayName(item) &mdash; @when.ToString("MMM d, h:mm tt", System.Globalization.CultureInfo.InvariantCulture)</div>
+                        <div>@ItemTitle(item)</div>
+                    </div>
+                }
+            </FluentStack>
         }
     }
     else
     {
         <h1>@ItemLabelPlural</h1>
-        <FluentLink @onclick="StartNewJob" Class="back-link">+ New @ItemLabelSingular</FluentLink>
+        <FluentLink @onclick="StartNewJob" Class="back-link" Disabled="_creatingItem">+ New @ItemLabelSingular</FluentLink>
+        <FluentLink @onclick="@(() => _showClosed = !_showClosed)" Class="back-link" Style="margin-left:16px;">
+            @(_showClosed ? "Hide closed" : "Show closed")
+        </FluentLink>
+        @if (_workflow?.Report is not null) { <FluentLink Href="@($"workflow/{WorkflowId}/report")" Class="back-link" Style="margin-left:16px;">Report</FluentLink> }
 
         @* Tap-to-search (2026-11-08): no live-as-you-type filtering, so searching never fires a
            request per keystroke -- the box just holds text until Search is tapped, and runs
@@ -164,7 +251,14 @@ else
                     var item = new ItemSummary(result.Id, result.StageId, result.Data, result.CreatedAt);
                     <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
                         <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                            <strong style="color:var(--app-accent);">#@result.JobNumber @ItemTitle(item) &rarr;</strong>
+                            @if (string.Equals(_workflow?.ItemLabel, "job", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <strong style="color:var(--app-accent);">#@result.JobNumber @ItemTitle(item) &rarr;</strong>
+                            }
+                            else
+                            {
+                                <strong style="color:var(--app-accent);">@ItemDisplayName(item) &rarr;</strong>
+                            }
                         </div>
                         <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
                     </FluentCard>
@@ -174,11 +268,18 @@ else
         else
         {
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="8" Style="margin-top:12px;">
-                @foreach (var item in _items)
+                @foreach (var item in VisibleItems())
                 {
                     <FluentCard Class="clickable-card" style="padding:14px; max-width:100%; box-sizing:border-box; border-radius:var(--app-radius);" @onclick="() => SelectItem(item)">
                         <div style="white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;">
-                            <strong style="color:var(--app-accent);">#@JobNumber(item) @ItemTitle(item) &rarr;</strong>
+                            @if (string.Equals(_workflow?.ItemLabel, "job", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <strong style="color:var(--app-accent);">#@JobNumber(item) @ItemTitle(item) &rarr;</strong>
+                            }
+                            else
+                            {
+                                <strong style="color:var(--app-accent);">@ItemDisplayName(item) &rarr;</strong>
+                            }
                         </div>
                         <div style="opacity:0.7; margin-top:2px;">Stage: @StageTitle(item.StageId)</div>
                     </FluentCard>
@@ -456,6 +557,17 @@ else
         foreach (var x in parsed) yield return (x.Item, x.Parsed!.Value);
     }
 
+    // Hides jobs sitting in a terminal stage (e.g. Closed) from the bare Jobs list by default --
+    // closed jobs would otherwise just pile up alongside open ones forever (2026-11-11). Search
+    // results are left untouched since searching for a specific job is an explicit intent that
+    // shouldn't be second-guessed by this filter.
+    private bool _showClosed;
+
+    private IEnumerable<ItemSummary> VisibleItems() =>
+        _showClosed
+            ? _items!
+            : _items!.Where(i => _stages!.FirstOrDefault(s => s.Id == i.StageId)?.IsTerminal != true);
+
     private string ItemTitle(ItemSummary item)
     {
         var key = TitleKey(item);
@@ -469,6 +581,26 @@ else
     // assigned.
     private int JobNumber(ItemSummary item) =>
         _items is null ? 0 : _items.OrderBy(i => i.CreatedAt).ToList().FindIndex(i => i.Id == item.Id) + 1;
+
+    // An arbitrary sequential count only makes sense as an identifier for the mechanic
+    // workflow's actual jobs ("job" item_label) -- for anything else (e.g. Nutrition Tracker's
+    // meal entries), which stage and which day it happened on identifies it far better than a
+    // count ever could. yyyy-MM-dd first so a list of these sorts correctly as plain text, not
+    // just by the underlying timestamp (2026-11-12, user request).
+    // stageId defaults to the item's own current stage (right for list rows and the overview
+    // header, where there's no notion of "which stage am I looking at" separate from the item
+    // itself) -- the stage-detail header passes _selectedStageId explicitly instead, since that
+    // can legitimately differ from the item's actual current stage (e.g. previewing Breakfast's
+    // checklist from the Stages list while the item has already moved on to Lunch); using
+    // item.StageId there unconditionally made the header always read "Lunch ..." even while
+    // looking at Breakfast's own checklist (2026-11-13 user report: "when I click on the
+    // breakfast stage, it goes to lunch" -- the checklist shown was correct, only the heading
+    // was wrong).
+    private string ItemDisplayName(ItemSummary item, string? stageId = null) =>
+        string.Equals(_workflow?.ItemLabel, "job", StringComparison.OrdinalIgnoreCase)
+            ? $"Job #{JobNumber(item)}"
+            // .ToLocalTime() (2026-11-15): matches the report's local-day bucketing.
+            : $"{StageTitle(stageId ?? item.StageId)} {item.CreatedAt.ToLocalTime():yyyy-MM-dd}";
 
     // No field names can be assumed in general (data is domain-agnostic jsonb), but a field
     // literally named "title" is a real convention the agent itself already uses when it creates
@@ -500,13 +632,6 @@ else
         return item.Data.Where(kv => kv.Key != titleKey);
     }
 
-    // Which stage each field was last written at -- key: stage_id, rebuilt from this item's
-    // event history whenever a stage is selected. A null value means the field's origin stage is
-    // unknown (e.g. an item created before 2026-10-20's create_item fix, which never recorded
-    // stage_id) -- such a field won't show in ANY stage view, only pre-stage-filter data would
-    // have shown it, which is an acceptable gap for old test data.
-    private readonly Dictionary<string, string?> _fieldStage = new();
-
     private List<ItemNote>? _notes;
 
     // null stageId -> job-level notes (shown on the job overview page); a real stage id ->
@@ -516,40 +641,9 @@ else
     private List<ItemNote> NotesFor(string? stageId) =>
         _notes?.Where(n => n.StageId == stageId).ToList() ?? new List<ItemNote>();
 
-    private async Task LoadFieldStageMap(string itemId)
+    private async Task LoadNotes(string itemId)
     {
-        _fieldStage.Clear();
-        var eventsTask = Api.GetItemEventsAsync(itemId);
-        var notesTask = Api.GetNotesAsync(itemId);
-        var events = await eventsTask;
-        _notes = await notesTask;
-        foreach (var e in events)
-        {
-            if (e.Data is null) continue;
-            foreach (var (key, value) in e.Data)
-            {
-                if (e.EventType == "item.data_changed" && value is null)
-                    _fieldStage.Remove(key);
-                else if (e.EventType is "item.created" or "item.data_changed")
-                    _fieldStage[key] = e.StageId;
-            }
-        }
-    }
-
-    // A field shows under a stage if either: it's on that stage's own checklist (regardless of
-    // when it was actually written -- 2026-11-06: a field is routinely filled in one message
-    // before the user confirms moving to the stage it belongs to, e.g. "scheduled_at" typed while
-    // still in Intake, right before confirming the move to Scheduling, so it got Intake-tagged
-    // and never showed under Scheduling despite Scheduling's own checklist marking it done); or
-    // it was last written while that stage was active and isn't on any checklist, i.e. an ad-hoc
-    // field with no declared home stage (2026-10-25: the original behavior, still wanted for
-    // those -- an Intake-only field set later while sitting at Scheduling shouldn't show there).
-    private IEnumerable<KeyValuePair<string, JsonNode?>> ItemFieldsForStage(ItemSummary item, string? stageId)
-    {
-        var checklist = _stages?.FirstOrDefault(s => s.Id == stageId)?.Checklist ?? [];
-        return ItemFields(item).Where(kv =>
-            checklist.Contains(kv.Key) ||
-            (_fieldStage.TryGetValue(kv.Key, out var s) && s == stageId));
+        _notes = await Api.GetNotesAsync(itemId);
     }
 
     private string StageTitle(string? stageId) =>
@@ -566,25 +660,80 @@ else
     // into something readable for display.
     private static string ChecklistLabel(string field) => Capitalize(field.Replace('_', ' '));
 
+    // Splits a trailing unit suffix (just "_g" and "_lbs" today -- the only units any checklist
+    // field actually uses) off the field's label, so a filled-in value can be shown as "43g
+    // Protein" instead of the field needing its unit spelled out a second time in the label
+    // itself (2026-11-13). Anything else falls back to the plain label with no unit.
+    private static readonly (string Suffix, string Unit)[] FieldUnitSuffixes = [("_g", "g"), ("_lbs", "lbs")];
+
+    private static (string Label, string Unit) FieldLabelAndUnit(string field)
+    {
+        foreach (var (suffix, unit) in FieldUnitSuffixes)
+        {
+            if (field.EndsWith(suffix, StringComparison.Ordinal))
+                return (Capitalize(field[..^suffix.Length].Replace('_', ' ')), unit);
+        }
+        return (ChecklistLabel(field), "");
+    }
+
+    // A trailing "*" marks which checklist fields actually gate the Done-shortcut button (see
+    // DoneNextStage) -- everything on a stage's checklist is shown either way, this just tells
+    // the user which ones are optional at a glance rather than leaving it to trial and error
+    // (2026-11-11).
+    private static string ChecklistLabel(StageSummary stage, string field) =>
+        ChecklistLabel(field) + (stage.OptionalChecklist.Contains(field) ? "" : " *");
+
     private async Task SelectItem(ItemSummary item)
     {
         _selectedItem = item;
         _selectedStageId = null;
         _notes = null; // show the spinner while this item's own notes load, not the last item's
-        await LoadFieldStageMap(item.Id);
+        await LoadNotes(item.Id);
     }
 
-    private void StartNewJob()
+    private bool _creatingItem;
+
+    // The mechanic workflow's Intake is loose conversational info-gathering (customer, vehicle,
+    // issue) with nothing structured to fill in yet, so it still goes through the chat-driven
+    // "+ New Job" screen. Every other workflow's initial stage (e.g. Nutrition Tracker's
+    // Breakfast) has no such intake step -- it's filled in afterward via Scan Plate or chat, the
+    // same way every other stage is -- so there's nothing to ask before the item exists, and
+    // making the user go through a chat screen that looks like but isn't yet the real stage view
+    // was just confusing (2026-11-14). item_label == "job" is the same distinction already used
+    // elsewhere in this file for job-specific display, not a one-off special case introduced here.
+    private async Task StartNewJob()
     {
-        _newJobChatStartIndex = _chatLog.Count;
-        _newJobMode = true;
+        if (string.Equals(_workflow?.ItemLabel, "job", StringComparison.OrdinalIgnoreCase))
+        {
+            _newJobChatStartIndex = _chatLog.Count;
+            _newJobMode = true;
+            return;
+        }
+
+        if (_creatingItem) return;
+        _creatingItem = true;
+        try
+        {
+            var newId = await Api.CreateItemAsync(WorkflowId);
+            _items = await Api.GetItemsAsync(WorkflowId);
+            _selectedItem = _items.FirstOrDefault(i => i.Id == newId);
+            if (_selectedItem is not null)
+            {
+                _selectedStageId = _selectedItem.StageId;
+                await LoadNotes(_selectedItem.Id);
+            }
+        }
+        finally
+        {
+            _creatingItem = false;
+        }
     }
     private void CancelNewJob() => _newJobMode = false;
 
     private async Task SelectStage(string stageId)
     {
         _selectedStageId = stageId;
-        await LoadFieldStageMap(_selectedItem!.Id);
+        await LoadNotes(_selectedItem!.Id);
     }
 
     // Same ordering as the Stages overview list -- "next" is simply the next one in sequence.
@@ -596,12 +745,22 @@ else
     }
 
     // The next stage to offer the Done button for, or null if the current stage has no checklist,
-    // the checklist isn't fully filled in yet, or there's no next stage to move to.
+    // its required fields (checklist minus optional_checklist -- 2026-11-11) aren't all filled
+    // in yet, or there's no next stage to move to.
     private StageSummary? DoneNextStage()
     {
         if (_selectedItem is null || _selectedStageId is null) return null;
+        // Only offer this from the item's actual current stage, never while merely previewing a
+        // different one from the Stages list (2026-11-13) -- without this, the required-field
+        // check below reads the SAME leaked live-data bug as the checklist display: a preview of
+        // some other stage could look "already filled in" purely because its checklist happens
+        // to share field names with whatever stage the item is really on, letting Complete Stage
+        // move the item from its real current stage based on a field check that was never
+        // actually about that stage.
+        if (_selectedStageId != _selectedItem.StageId) return null;
         if (_stages!.FirstOrDefault(s => s.Id == _selectedStageId) is not { Checklist.Count: > 0 } stage) return null;
-        if (!stage.Checklist.All(f => _selectedItem.Data.TryGetPropertyValue(f, out var v) && v is not null)) return null;
+        var required = stage.Checklist.Except(stage.OptionalChecklist);
+        if (!required.All(f => _selectedItem.Data.TryGetPropertyValue(f, out var v) && v is not null)) return null;
         return NextStage(stage.Id);
     }
 
@@ -621,11 +780,54 @@ else
             _selectedItem = _items.FirstOrDefault(i => i.Id == _selectedItem.Id);
             _selectedStageId = toStageId;
             if (_selectedItem is not null)
-                await LoadFieldStageMap(_selectedItem.Id);
+                await LoadNotes(_selectedItem.Id);
         }
         finally
         {
             _movingStage = false;
+        }
+    }
+
+    private bool _scanningVin;
+    private string? _vinScanError;
+
+    // Resizes client-side via RequestImageFileAsync (works in WASM, not just Blazor Server --
+    // it draws to an off-screen canvas via JS interop either way) before sending, since a raw
+    // phone photo is several MB and that cost (upload time + tokens) adds up fast (2026-11-11).
+    // The photo is never persisted anywhere -- read once here, handed to scan-vin, discarded.
+    private async Task OnVinPhotoSelected(InputFileChangeEventArgs e)
+    {
+        if (_scanningVin || _selectedItem is null) return;
+        _scanningVin = true;
+        _vinScanError = null;
+        try
+        {
+            var resized = await e.File.RequestImageFileAsync("image/jpeg", 1600, 1600);
+            using var stream = resized.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+
+            var vin = await Api.ScanVinAsync(base64, "image/jpeg");
+            if (vin is null)
+            {
+                _vinScanError = "Couldn't read a VIN from that photo -- try again with the plate or sticker in better light/focus.";
+                return;
+            }
+
+            await Api.UpdateDataAsync(_selectedItem.Id, new JsonObject { ["vin"] = vin });
+            _items = await Api.GetItemsAsync(WorkflowId);
+            _selectedItem = _items.FirstOrDefault(i => i.Id == _selectedItem.Id);
+            if (_selectedItem is not null)
+                await LoadNotes(_selectedItem.Id);
+        }
+        catch (Exception ex)
+        {
+            _vinScanError = $"Scan failed: {ex.Message}";
+        }
+        finally
+        {
+            _scanningVin = false;
         }
     }
 
@@ -732,7 +934,7 @@ else
                 // what makes an agent-written add_note there land as a job-level note (2026-11-08).
                 selectedStageTitle: _selectedStageId is not null ? StageTitle(_selectedStageId) : null,
                 selectedStageId: _selectedStageId,
-                selectedJobNumber: _selectedItem is null ? null : JobNumber(_selectedItem),
+                selectedItemDisplayName: _selectedItem is null ? null : ItemDisplayName(_selectedItem),
                 selectedStageMessageCount: stageMessageCount);
             _messagesByJob[messagesKey] = messages;
             _chatLog.Add(("Agent", reply, itemId, stageId));
@@ -741,7 +943,7 @@ else
             if (_selectedItem is not null)
                 _selectedItem = _items.FirstOrDefault(i => i.Id == _selectedItem.Id);
             if (_selectedItem is not null && _selectedStageId is not null)
-                await LoadFieldStageMap(_selectedItem.Id);
+                await LoadNotes(_selectedItem.Id);
 
             // New-job mode: once create_item actually lands (items grew by one), drop straight
             // into the new job's own stage view instead of leaving the user back on the Jobs
@@ -751,7 +953,7 @@ else
                 _newJobMode = false;
                 _selectedItem = _items[0];
                 _selectedStageId = _selectedItem.StageId;
-                await LoadFieldStageMap(_selectedItem.Id);
+                await LoadNotes(_selectedItem.Id);
             }
         }
         catch (Exception ex)
