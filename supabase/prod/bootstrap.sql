@@ -38,7 +38,7 @@ insert into public.stages (id, workflow_id, title, sequence_order, is_initial, i
   ('ef1f7b61-105e-40df-af3c-6c17039a4636', '5417783a-2182-4adb-8aa4-3f42897c68a2', 'payment_receipt_submitted', 8, false, true,
     '["payment_method","receipt_number"]'::jsonb),
   ('8c1304bc-6fe8-4f94-a7d2-07359ecb9225', '5417783a-2182-4adb-8aa4-3f42897c68a2', 'closed', null, false, true,
-    null)
+    '["closed_at"]'::jsonb)
   on conflict (id) do update set
     title = excluded.title,
     sequence_order = excluded.sequence_order,
