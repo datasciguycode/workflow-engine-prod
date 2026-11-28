@@ -27,6 +27,10 @@
   Supabase config/branding. **Deliberately not ported:** Nutrition Tracker workflow and
   `scan-plate` — dev-only scaffolding proving the engine is workflow-agnostic, not something
   Falcon Auto needs; stays dev-only per user decision.
+- **2026-11-28: ported the `closed_at` migration** (`20261119000000`, optional date field on the
+  Closed stage) from dev — applied to prod's live DB (both Falcon Auto's and Test Sandbox's
+  workflows, verified via query) and committed, with `bootstrap.sql`/`create_test_account.sql`
+  updated so a future re-run of either doesn't revert it.
 - **Divergences from dev (keep on every merge from `dev-upstream`):**
   - `project_id = "workflow-app-prod"` in `supabase/config.toml` — permanent. Prevents local
     Supabase lifecycle commands (`start`/`stop`/`db reset --local`) from acting on dev's
